@@ -1,0 +1,19 @@
+# Diagnostic-only DLRM image. It preserves the patched distributed runtime
+# and adds gdb so one remote GPU process can emit a symbolic crash backtrace.
+ARG BASE_IMAGE=legosim-real:8166851-simbricks-pipedrain
+FROM ${BASE_IMAGE}
+
+COPY LegoSimbricks/real/simbricks_pipe_router.py /opt/legosim-distributed/
+
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gdb && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY single_stage_simulator/benchmark/dlrm_cpp_large/ /opt/legosim/benchmark/dlrm_cpp_large/
+
+# The upstream makefile already requests debug symbols. Build the exact app
+# against this image's GPGPU-Sim/SimBricks libraries after copying its source.
+RUN bash -lc 'export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=/usr; \
+    source /opt/legosim/gpgpu-sim/setup_environment; \
+    make -C /opt/legosim/benchmark/dlrm_cpp_large clean_all; \
+    make -C /opt/legosim/benchmark/dlrm_cpp_large NVCC="nvcc -ccbin /usr/bin/g++-10"'

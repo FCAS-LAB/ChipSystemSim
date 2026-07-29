@@ -1,0 +1,6 @@
+# Runtime DLRM image: retain the routing fix and add the race-free worker.
+# It deliberately omits gdb/recorder instrumentation for long timing runs.
+ARG BASE_IMAGE=legosim-real:single-stage-dlrm_cpp_large-gdb-router-fixed
+FROM ${BASE_IMAGE}
+
+COPY LegoSimbricks/real/worker.py /opt/legosim-distributed/

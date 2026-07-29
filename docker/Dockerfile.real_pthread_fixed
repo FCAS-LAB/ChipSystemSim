@@ -1,0 +1,11 @@
+ARG BASE_IMAGE=legosim-real:8166851-simbricks-pipedrain
+FROM ${BASE_IMAGE}
+
+# Docker may reject clone3 under its default seccomp profile. Rebuild the
+# native Sniper recorder so glibc's fallback SYS_clone creates the only SIFT
+# worker channel, preserving multithreaded LEGOSim CPU processes.
+COPY LegoSimbricks/real/patch_sniper_pthread_clone3.py /opt/legosim-distributed/
+
+RUN bash -lc 'python3 /opt/legosim-distributed/patch_sniper_pthread_clone3.py && \
+    make -C /opt/legosim/snipersim/sift/recorder \
+      PIN_ROOT=/opt/legosim/snipersim/pin_kit -j"$(nproc)"'

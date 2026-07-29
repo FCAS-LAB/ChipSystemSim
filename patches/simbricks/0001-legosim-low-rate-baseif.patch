@@ -1,0 +1,124 @@
+diff --git a/dist/common/base.c b/dist/common/base.c
+index e50f283..f58ed47 100644
+--- a/dist/common/base.c
++++ b/dist/common/base.c
+@@ -40,8 +40,13 @@
+ 
+ #include "dist/common/utils.h"
+ 
+-static const uint64_t kPollReportThreshold = 128;
+-static const uint64_t kCleanReportThreshold = 128;
++// The distributed LEGOSim PipeComm transport often sends a single message and
++// then blocks for its peer.  The upstream batching threshold of 128 leaves a
++// low-rate write invisible to the remote endpoint indefinitely.  Report each
++// producer/cleanup advance so the BaseIf ring makes progress for request/ack
++// traffic as well as bulk simulation traffic.
++static const uint64_t kPollReportThreshold = 1;
++static const uint64_t kCleanReportThreshold = 1;
+ static const uint64_t kPollMax = 8;
+ static const uint64_t kCleanupMax = 16;
+ 
+@@ -451,6 +456,12 @@ static inline void PollPeerCleanup(struct Peer *peer, bool *report) {
+ }
+ 
+ void BasePoll() {
++  // A report is also a visibility heartbeat for the socket proxy. In a
++  // request/response workload a peer can otherwise wait forever after a
++  // single low-rate entry, because neither batching threshold is crossed.
++  // PollThread yields for 100us in net_sockets, so this emits at most 1k
++  // reports/s per proxy while idle.
++  static uint32_t heartbeat_polls;
+   bool report = false;
+   for (size_t i = 0; i < peer_num; i++) {
+     struct Peer *peer = &peers[i];
+@@ -461,6 +472,11 @@ void BasePoll() {
+     PollPeerCleanup(peer, &report);
+   }
+ 
++  if (++heartbeat_polls >= 10) {
++    heartbeat_polls = 0;
++    report = true;
++  }
++
+   if (report)
+     BaseOpPassReport();
+ }
+diff --git a/dist/sockets/net_sockets.c b/dist/sockets/net_sockets.c
+index 1f5724d..bd55751 100644
+--- a/dist/sockets/net_sockets.c
++++ b/dist/sockets/net_sockets.c
+@@ -35,6 +35,7 @@
+ #include <sys/epoll.h>
+ #include <sys/mman.h>
+ #include <sys/socket.h>
++#include <time.h>
+ #include <unistd.h>
+ 
+ #include <simbricks/base/proto.h>
+@@ -98,6 +99,11 @@ static int epfd = -1;
+ static int sockfd = -1;
+ static int msg_id = 0;
+ 
++static bool DebugEnabled(void) {
++  const char *value = getenv("LEGOSIM_SIMBRICKS_DEBUG");
++  return value != NULL && strcmp(value, "1") == 0;
++}
++
+ static uint8_t *rx_buffer;
+ static size_t rx_buf_pos = 0;
+ 
+@@ -368,6 +374,8 @@ static int SockMsgRxIntro(struct SockMsg *msg) {
+ }
+ 
+ static int SockMsgRxReport(struct SockMsg *msg) {
++  if (DebugEnabled())
++    fprintf(stderr, "net_sockets: received position report\n");
+ #ifdef SOCK_DEBUG
+   fprintf(stderr, "SockMsgRxReport");
+ #endif
+@@ -394,6 +402,9 @@ static int SockMsgRxEntries(struct SockMsg *msg) {
+   }
+ 
+   struct Peer *peer = peers + msg->id;
++  if (DebugEnabled())
++    fprintf(stderr, "net_sockets: received entries peer=%u pos=%u count=%u\n",
++            msg->id, entries->pos, entries->num_entries);
+ #ifdef SOCK_DEBUG
+   fprintf(stderr, "SockMsgRxEntries -> peer %s\n", peer->sock_path);
+   fprintf(stderr, "  num=%u  pos=%u\n", entries->num_entries, entries->pos);
+@@ -531,6 +542,9 @@ int BaseOpPassIntro(struct Peer *peer) {
+ }
+ 
+ int BaseOpPassEntries(struct Peer *peer, uint32_t pos, uint32_t n) {
++  if (DebugEnabled())
++    fprintf(stderr, "net_sockets: sending entries peer=%td pos=%u count=%u\n",
++            peer - peers, pos, n);
+ #ifdef SOCK_DEBUG
+   fprintf(stderr, "BaseOpPassEntries(%s, n=%zu, pos=%u)\n", peer->sock_path, n,
+           pos);
+@@ -579,6 +593,7 @@ int BaseOpPassEntries(struct Peer *peer, uint32_t pos, uint32_t n) {
+ }
+ 
+ int BaseOpPassReport() {
++  if (DebugEnabled()) fprintf(stderr, "net_sockets: sending position report\n");
+ #ifdef SOCK_DEBUG
+   fprintf(stderr, "BaseOpPassReport()\n");
+ #endif
+@@ -621,8 +636,16 @@ int BaseOpPassReport() {
+ }
+ 
+ static void *PollThread(void *data) {
+-  while (true)
++  (void)data;
++  while (true) {
+     BasePoll();
++    // BasePoll is non-blocking. Without a short yield this helper consumes an
++    // entire Docker CPU and can starve the colocated BaseIf endpoint that owns
++    // the Unix socket peer. The transport remains event-driven for network
++    // I/O; this only bounds an otherwise busy polling loop.
++    const struct timespec pause = {.tv_sec = 0, .tv_nsec = 100000};
++    nanosleep(&pause, NULL);
++  }
+   return NULL;
+ }
+ 

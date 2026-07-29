@@ -1,0 +1,28 @@
+{
+  "source": {
+    "repository": "https://github.com/FCAS-LAB/LEGOSIM_MICRO.git",
+    "revision": "816685160b54259d82fa3c913135ac9f2c68aeff"
+  },
+  "workloads": {
+    "mlp": {
+      "yaml": "artifact/MLP/mlp.yml",
+      "phase1_processes": 7,
+      "phase2_processes": 1
+    },
+    "dlrm": {
+      "yaml": "benchmark/dlrm_npu/dlrm.yml",
+      "phase1_processes": 2,
+      "phase2_processes": 1
+    },
+    "resnet": {
+      "yaml": "benchmark/resnet/resnet.yml",
+      "phase1_processes": 7,
+      "phase2_processes": 1
+    },
+    "bfs": {
+      "yaml": "artifact/bfs_cuda/bfs.yml",
+      "phase1_processes": 7,
+      "phase2_processes": 1
+    }
+  }
+}

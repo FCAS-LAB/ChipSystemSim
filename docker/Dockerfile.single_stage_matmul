@@ -1,0 +1,11 @@
+# Build the documented single-stage LegoSim matmul benchmark against the
+# already validated distributed LEGOSim runtime.
+ARG BASE_IMAGE=legosim-real:8166851-simbricks-integrated
+FROM ${BASE_IMAGE}
+
+COPY single_stage_simulator/benchmark/matmul /opt/legosim/benchmark/matmul
+
+RUN bash -lc 'export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=/usr; \
+    source /opt/legosim/gpgpu-sim/setup_environment; \
+    make -C /opt/legosim/benchmark/matmul clean_all; \
+    make -C /opt/legosim/benchmark/matmul NVCC="nvcc -ccbin /usr/bin/g++-10"'

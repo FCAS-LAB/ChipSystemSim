@@ -1,0 +1,37 @@
+# Relink only the PipeComm-dependent native artifacts after a transport-header
+# change. This extends a verified full image and avoids re-fetching Sniper.
+ARG BASE_IMAGE=legosim-real:8166851-simbricks-integrated
+FROM ${BASE_IMAGE}
+
+COPY real/remote_pipe_comm.h real/mnsim_compat.py real/mnsim_compat.cpp real/apply_overlay.py \
+     real/worker.py real/process_proxy.py real/patch_interchiplet_pipe_drain.py /opt/legosim-distributed/
+COPY real/simbricks_pipe_router.py /opt/legosim-distributed/
+# The recorder Makefile needs PIN_ROOT; otherwise its clean/build targets are no-ops.
+RUN bash -lc 'export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=/usr; \
+    source /opt/legosim/gpgpu-sim/setup_environment; \
+    python3 /opt/legosim-distributed/apply_overlay.py; \
+    python3 /opt/legosim-distributed/patch_interchiplet_pipe_drain.py; \
+    # cuda_runtime_api.cc includes PipeComm directly.  Rebuild its object and
+    # the runtime shared library after installing the transport overlay;
+    # rebuilding a CUDA workload alone otherwise retains the old FIFO code.
+    # GPGPU-Sim's generated dependency file is not refreshed when an
+    # externally included header changes. Removing the complete libcuda
+    # object directory guarantees cuda_runtime_api.cc is compiled against
+    # remote_pipe_comm.h, while leaving the expensive simulator core intact.
+    rm -rf "${SIM_OBJ_FILES_DIR}/libcuda"; \
+    rm -f "${SIM_OBJ_FILES_DIR}/libcuda/libcuda.a" \
+          "${SIM_LIB_DIR}/libcudart.so"; \
+    make -C /opt/legosim/gpgpu-sim gpgpusim -j"$(nproc)"; \
+    cmake --build /opt/legosim/interchiplet/build --target clean; \
+    cmake --build /opt/legosim/interchiplet/build --parallel; \
+    make -C /opt/legosim/snipersim/sift/recorder PIN_ROOT=/opt/legosim/snipersim/pin_kit clean; \
+    make -C /opt/legosim/snipersim/sift/recorder PIN_ROOT=/opt/legosim/snipersim/pin_kit -j"$(nproc)"; \
+    make -C /opt/legosim/snipersim -j"$(nproc)"; \
+    make -C /opt/legosim/artifact/MLP clean; \
+    make -C /opt/legosim/artifact/MLP NVCC="nvcc -ccbin /usr/bin/g++-10"; \
+    make -C /opt/legosim/benchmark/resnet clean; \
+    make -C /opt/legosim/benchmark/resnet NVCC="nvcc -ccbin /usr/bin/g++-10" -j"$(nproc)"; \
+    make -C /opt/legosim/artifact/bfs_cuda clean; \
+    make -C /opt/legosim/artifact/bfs_cuda NVCC="nvcc -ccbin /usr/bin/g++-10" -j"$(nproc)"; \
+    make -C /opt/legosim/benchmark/dlrm_npu clean; \
+    make -C /opt/legosim/benchmark/dlrm_npu -j"$(nproc)"'

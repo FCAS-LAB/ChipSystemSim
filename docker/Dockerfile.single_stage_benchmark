@@ -1,0 +1,22 @@
+# Build one self-contained benchmark from the single_stage_simulator source
+# tree against the already integrated LEGOSim + SimBricks runtime.  Keeping a
+# single benchmark per image makes build and runtime evidence attributable to
+# one workload, and allows a failed benchmark to leave the others testable.
+ARG BASE_IMAGE=legosim-real:8166851-simbricks-integrated
+FROM ${BASE_IMAGE}
+
+ARG BENCHMARK
+
+# Docker expands build arguments in COPY sources.  The trailing slashes retain
+# the benchmark directory's contents below the corresponding runtime path.
+COPY single_stage_simulator/benchmark/${BENCHMARK}/ /opt/legosim/benchmark/${BENCHMARK}/
+
+RUN test -n "${BENCHMARK}" && \
+    test -f "/opt/legosim/benchmark/${BENCHMARK}/makefile" && \
+    bash -lc 'export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=/usr; \
+        source /opt/legosim/gpgpu-sim/setup_environment; \
+        # Some upstream makefiles do not provide clean_all or bin_dir.  These
+        # are build-layout omissions rather than a reason to mutate source.
+        make -C "/opt/legosim/benchmark/${BENCHMARK}" clean_all || true; \
+        mkdir -p "/opt/legosim/benchmark/${BENCHMARK}/bin"; \
+        make -C "/opt/legosim/benchmark/${BENCHMARK}" NVCC="nvcc -ccbin /usr/bin/g++-10"'

@@ -1,0 +1,13 @@
+# Diagnostic-only DLRM image. ASan instruments benchmark host code while
+# retaining the same integrated GPGPU-Sim and SimBricks runtime as production.
+ARG BASE_IMAGE=legosim-real:8166851-simbricks-assets
+FROM ${BASE_IMAGE}
+
+COPY single_stage_simulator/benchmark/dlrm_cpp_large/ /opt/legosim/benchmark/dlrm_cpp_large/
+
+RUN bash -lc 'export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=/usr; \
+    source /opt/legosim/gpgpu-sim/setup_environment; \
+    make -C /opt/legosim/benchmark/dlrm_cpp_large clean_all; \
+    make -C /opt/legosim/benchmark/dlrm_cpp_large \
+      CC="g++ -fsanitize=address -fno-omit-frame-pointer" \
+      NVCC="nvcc -ccbin /usr/bin/g++-10 -Xcompiler -fsanitize=address -Xcompiler -fno-omit-frame-pointer"'

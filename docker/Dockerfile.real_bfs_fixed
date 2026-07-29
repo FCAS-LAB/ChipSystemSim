@@ -1,0 +1,11 @@
+# Production image with the validated pthread repair and bounded native BFS
+# frontier loop.  Only the affected BFS CUDA binary is rebuilt.
+FROM legosim-real:8166851-simbricks-pthread-fixed
+
+COPY real/patch_bfs_bounded_iterations.py /opt/legosim-distributed/
+
+RUN bash -lc 'export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=/usr; \
+    source /opt/legosim/gpgpu-sim/setup_environment; \
+    python3 /opt/legosim-distributed/patch_bfs_bounded_iterations.py; \
+    make -C /opt/legosim/artifact/bfs_cuda clean; \
+    make -C /opt/legosim/artifact/bfs_cuda NVCC="nvcc -ccbin /usr/bin/g++-10" -j"$(nproc)"'

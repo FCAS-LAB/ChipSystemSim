@@ -1,0 +1,23 @@
+# The host's Docker Desktop proxy cannot currently reach NVIDIA Docker Hub.
+# Build from the locally available Ubuntu 22.04 LEGOSimbricks base instead,
+# then install the CUDA compiler from Ubuntu's multiverse repository.  The
+# runtime only needs CUDA's userspace toolkit because GPGPU-Sim is compiled
+# into the image; no host GPU is required for these simulator workloads.
+ARG BASE_IMAGE=simbricks-legosim:latest
+FROM ${BASE_IMAGE}
+
+ARG LEGOSIM_REF=816685160b54259d82fa3c913135ac9f2c68aeff
+ARG INSTALL_CUDA_TOOLKIT=1
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git build-essential cmake python2 python3 python3-yaml bison flex scons libboost-all-dev libyaml-cpp-dev libsqlite3-dev zlib1g-dev libbz2-dev libglib2.0-dev libx11-dev libxext-dev libxrender-dev libzmq3-dev libelf-dev \
+    && if [ "$INSTALL_CUDA_TOOLKIT" = "1" ]; then DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nvidia-cuda-toolkit; fi \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --recursive https://github.com/FCAS-LAB/LEGOSIM_MICRO.git /opt/legosim && cd /opt/legosim && git checkout "$LEGOSIM_REF" && git submodule update --init --recursive
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends wget xutils-dev libgl1-mesa-dev nlohmann-json3-dev gcc-10 g++-10 && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/legosim
+COPY real/entrypoint.sh /usr/local/bin/legosim-run
+COPY real/build-native.sh /usr/local/bin/legosim-build-native
+COPY real/fifo_broker.py real/worker.py real/process_proxy.py real/remote_pipe_comm.h real/apply_overlay.py /opt/legosim-distributed/
+RUN chmod +x /usr/local/bin/legosim-run
+RUN chmod +x /usr/local/bin/legosim-build-native
+RUN python3 /opt/legosim-distributed/apply_overlay.py && /usr/local/bin/legosim-build-native
+ENTRYPOINT ["/usr/local/bin/legosim-run"]

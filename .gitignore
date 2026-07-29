@@ -1,0 +1,20 @@
+results/
+__pycache__/
+*.pyc
+
+# Local VM images, cloud-init seeds, credentials, and registry logs must never
+# be published with the source repository.
+*.ova
+*.ovf
+*.vmdk
+*.vmx
+*.nvram
+*.iso
+*.pem
+*.key
+secrets/
+E:/LegoSimbricksVMs/
+
+# SimBricks is an upstream dependency. Clone the pinned revision and apply the
+# repository patch described in README.md instead of committing a nested clone.
+third_party/simbricks/

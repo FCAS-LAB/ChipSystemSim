@@ -1,0 +1,61 @@
+{
+  "services": {
+    "node0": {
+      "image": "simbricks-legosim:latest",
+      "command": [
+        "--node-id",
+        "0"
+      ],
+      "environment": {
+        "SIM_CONFIG": "{\"run_id\":\"bfs-nodes4-rep1\",\"benchmark\":\"BFS\",\"container_count\":4,\"placement\":{\"0\":[\"cpu0\",\"gpu0\",\"gpu3\"],\"1\":[\"cpu1\",\"gpu2\",\"gpu5\"],\"2\":[\"cpu2\",\"gpu4\",\"gpu7\"],\"3\":[\"cpu3\",\"gpu6\",\"gpu1\",\"ns3\"]},\"proxies\":[],\"output_dir\":\"/run\",\"network\":{\"bandwidth_mbps\":1000,\"propagation_us\":10},\"workload\":{\"label\":\"BFS\",\"rounds\":12,\"input_messages_per_round\":2,\"payload_bytes\":24576,\"result_bytes\":8192,\"cpu_compute_ms\":2,\"gpu_compute_ms\":6},\"source_workload\":\"ODHS Table II reduced-input synthetic trace\"}"
+      },
+      "networks": [
+        "simulation"
+      ]
+    },
+    "node1": {
+      "image": "simbricks-legosim:latest",
+      "command": [
+        "--node-id",
+        "1"
+      ],
+      "environment": {
+        "SIM_CONFIG": "{\"run_id\":\"bfs-nodes4-rep1\",\"benchmark\":\"BFS\",\"container_count\":4,\"placement\":{\"0\":[\"cpu0\",\"gpu0\",\"gpu3\"],\"1\":[\"cpu1\",\"gpu2\",\"gpu5\"],\"2\":[\"cpu2\",\"gpu4\",\"gpu7\"],\"3\":[\"cpu3\",\"gpu6\",\"gpu1\",\"ns3\"]},\"proxies\":[],\"output_dir\":\"/run\",\"network\":{\"bandwidth_mbps\":1000,\"propagation_us\":10},\"workload\":{\"label\":\"BFS\",\"rounds\":12,\"input_messages_per_round\":2,\"payload_bytes\":24576,\"result_bytes\":8192,\"cpu_compute_ms\":2,\"gpu_compute_ms\":6},\"source_workload\":\"ODHS Table II reduced-input synthetic trace\"}"
+      },
+      "networks": [
+        "simulation"
+      ]
+    },
+    "node2": {
+      "image": "simbricks-legosim:latest",
+      "command": [
+        "--node-id",
+        "2"
+      ],
+      "environment": {
+        "SIM_CONFIG": "{\"run_id\":\"bfs-nodes4-rep1\",\"benchmark\":\"BFS\",\"container_count\":4,\"placement\":{\"0\":[\"cpu0\",\"gpu0\",\"gpu3\"],\"1\":[\"cpu1\",\"gpu2\",\"gpu5\"],\"2\":[\"cpu2\",\"gpu4\",\"gpu7\"],\"3\":[\"cpu3\",\"gpu6\",\"gpu1\",\"ns3\"]},\"proxies\":[],\"output_dir\":\"/run\",\"network\":{\"bandwidth_mbps\":1000,\"propagation_us\":10},\"workload\":{\"label\":\"BFS\",\"rounds\":12,\"input_messages_per_round\":2,\"payload_bytes\":24576,\"result_bytes\":8192,\"cpu_compute_ms\":2,\"gpu_compute_ms\":6},\"source_workload\":\"ODHS Table II reduced-input synthetic trace\"}"
+      },
+      "networks": [
+        "simulation"
+      ]
+    },
+    "node3": {
+      "image": "simbricks-legosim:latest",
+      "command": [
+        "--node-id",
+        "3"
+      ],
+      "environment": {
+        "SIM_CONFIG": "{\"run_id\":\"bfs-nodes4-rep1\",\"benchmark\":\"BFS\",\"container_count\":4,\"placement\":{\"0\":[\"cpu0\",\"gpu0\",\"gpu3\"],\"1\":[\"cpu1\",\"gpu2\",\"gpu5\"],\"2\":[\"cpu2\",\"gpu4\",\"gpu7\"],\"3\":[\"cpu3\",\"gpu6\",\"gpu1\",\"ns3\"]},\"proxies\":[],\"output_dir\":\"/run\",\"network\":{\"bandwidth_mbps\":1000,\"propagation_us\":10},\"workload\":{\"label\":\"BFS\",\"rounds\":12,\"input_messages_per_round\":2,\"payload_bytes\":24576,\"result_bytes\":8192,\"cpu_compute_ms\":2,\"gpu_compute_ms\":6},\"source_workload\":\"ODHS Table II reduced-input synthetic trace\"}"
+      },
+      "networks": [
+        "simulation"
+      ]
+    }
+  },
+  "networks": {
+    "simulation": {
+      "driver": "bridge"
+    }
+  }
+}

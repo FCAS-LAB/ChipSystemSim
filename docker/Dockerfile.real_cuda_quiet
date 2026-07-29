@@ -1,0 +1,12 @@
+# Native LEGOSim image with pthread, bounded-BFS and nonfunctional GPGPU API
+# logging repairs. Rebuild the CUDA runtime after changing its source.
+FROM legosim-real:8166851-simbricks-pthread-bfs-fixed
+
+COPY real/patch_gpgpusim_quiet_api_log.py /opt/legosim-distributed/
+
+RUN bash -lc 'export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=/usr; \
+    source /opt/legosim/gpgpu-sim/setup_environment; \
+    python3 /opt/legosim-distributed/patch_gpgpusim_quiet_api_log.py; \
+    rm -rf "${SIM_OBJ_FILES_DIR}/libcuda"; \
+    rm -f "${SIM_LIB_DIR}/libcudart.so"; \
+    make -C /opt/legosim/gpgpu-sim gpgpusim -j"$(nproc)"'

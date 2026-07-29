@@ -1,0 +1,10 @@
+# Rebuild only Sniper's Pin recorder after adding PipeComm progress markers.
+ARG BASE_IMAGE=legosim-real:single-stage-dlrm_cpp_large-gdb-router-fixed
+FROM ${BASE_IMAGE}
+
+COPY LegoSimbricks/real/patch_sniper_recorder_diagnostics.py \
+     LegoSimbricks/real/worker.py /opt/legosim-distributed/
+
+RUN bash -lc 'python3 /opt/legosim-distributed/patch_sniper_recorder_diagnostics.py && \
+    make -C /opt/legosim/snipersim/sift/recorder \
+      PIN_ROOT=/opt/legosim/snipersim/pin_kit -j"$(nproc)"'
