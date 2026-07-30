@@ -125,6 +125,29 @@ Set-Location D:\root\work2026\LegoSimbricks
 .\scripts\provision_vmware_swarm.ps1 -NodeCount 8
 ```
 
+#### 已版本化的八节点资源配置
+
+[`vm/profiles/vmware-fresh-8x-1vcpu-1536mib.json`](vm/profiles/vmware-fresh-8x-1vcpu-1536mib.json)
+记录当前已验证 VM 集合的可移植参数：8 台 `legosim-node-0-fresh` 至
+`legosim-node-7-fresh`，每台 1 vCPU、1536 MiB 内存，使用 NAT `VMnet8` 和 e1000
+网卡。该资源上限对所有 1/2/4/8 节点点位相同；节点数改变的是 Swarm placement，而不是
+每台 VM 的资源。
+
+先做只读校验：
+
+```powershell
+.\scripts\apply_vmware_resource_profile.ps1
+```
+
+只有在八台目标 VM 均已关机时，才可以应用该清单：
+
+```powershell
+.\scripts\apply_vmware_resource_profile.ps1 -Apply
+```
+
+脚本不会修改 MAC 地址、UUID、VMDK、NoCloud seed 或凭据；这些都是主机本地状态，不能
+提交到 Git。`-Apply` 检测到虚拟机仍在运行会拒绝写入，而不会强制关机。
+
 脚本需要本地 OVA、VMware 工具与密码文件；具体路径和默认 VMnet 地址可在脚本参数中
 修改。启动 registry 中继后，所有 VM 应使用宿主机 VMnet 地址而不是 `localhost`。
 

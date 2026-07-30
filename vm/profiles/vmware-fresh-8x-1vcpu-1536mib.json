@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "profile_name": "vmware-fresh-8x-1vcpu-1536mib",
+  "description": "Verified small-memory eight-node LEGOSim-SimBricks Docker Swarm profile for fixed-process-count 1/2/4/8 placement experiments.",
+  "vm_root_default": "E:\\LegoSimbricksVMs",
+  "node_directory": "fresh-nodes",
+  "node_name_pattern": "legosim-node-{slot}-fresh",
+  "node_count": 8,
+  "resources": {
+    "memory_mib": 1536,
+    "vcpus": 1
+  },
+  "hardware": {
+    "guest_os": "ubuntu-64",
+    "ethernet0_connection_type": "nat",
+    "ethernet0_vnet": "VMnet8",
+    "ethernet0_virtual_device": "e1000",
+    "mac_address_policy": "preserve-existing"
+  },
+  "operational_notes": [
+    "The profile assigns 8 vCPUs and 12 GiB of guest RAM in total; reserve additional host memory for VMware, Docker, cache, and Windows.",
+    "Target VMs must be powered off before applying resource changes. The script verifies by default and never powers off VMs automatically.",
+    "MAC addresses, UUIDs, disks, NoCloud seeds, and credentials are host-local state and are not versioned.",
+    "The 1, 2, 4, and 8 node experiments reuse these eight VMs; node count changes only Swarm placement."
+  ]
+}
