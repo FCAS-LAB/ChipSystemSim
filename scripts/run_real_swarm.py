@@ -62,9 +62,9 @@ def require_node_labels(node_count: int) -> None:
         labels = json.loads(inspected.stdout)[0].get("Spec", {}).get("Labels", {}) or {}
         labels_by_node.append({str(key): str(value) for key, value in labels.items()})
     for slot in range(node_count):
-        expected = f"legosim.node.{slot}"
+        expected = f"chipsystemsim.node.{slot}"
         if not any(labels.get(expected) == "true" for labels in labels_by_node):
-            raise RuntimeError(f"no Swarm node has label legosim.node.{slot}=true")
+            raise RuntimeError(f"no Swarm node has label chipsystemsim.node.{slot}=true")
 
 
 def coordinator_state(stack: str) -> str:
@@ -98,7 +98,7 @@ def wait_for_stack_removal(stack: str, timeout_s: int = 60) -> None:
     while time.monotonic() < deadline:
         stacks = run(["docker", "stack", "ls", "--format", "{{.Name}}"], capture=True).stdout.splitlines()
         networks = run(["docker", "network", "ls", "--format", "{{.Name}}"], capture=True).stdout.splitlines()
-        if stack not in stacks and f"{stack}_legosim" not in networks:
+        if stack not in stacks and f"{stack}_chipsystemsim" not in networks:
             return
         time.sleep(1)
     raise TimeoutError(f"Swarm did not remove stack {stack} within {timeout_s} seconds")
@@ -165,7 +165,7 @@ def run_one(workload: str, node_count: int, image: str, output_root: Path, timeo
          *(["--sniper-maxthreads", str(sniper_maxthreads)] if sniper_maxthreads is not None else []),
          "--output", str(derived_yaml),
          *(["--stream-output"] if stream_output else [])])
-    stack = f"legosim_{workload}_{node_count}"
+    stack = f"chipsystemsim_{workload}_{node_count}"
     # A prior interrupted run can leave Swarm asynchronously deleting the
     # overlay network. Do not reuse the stack name until both resources are gone.
     wait_for_stack_removal(stack)
@@ -227,7 +227,7 @@ def main() -> None:
         metavar="WORKLOAD=IMAGE",
         help=(
             "override the image for one workload; repeat as needed, for example "
-            "--workload-image dlrm=registry/legosim-real:native-dlrm"
+            "--workload-image dlrm=registry/chipsystemsim:native-dlrm"
         ),
     )
     parser.add_argument("--output-dir", type=Path, default=ROOT / "results" / "real-swarm")

@@ -1,5 +1,5 @@
 # Repair the GPGPU-Sim stream-manager race exposed by native MLP phase1-0.
-ARG BASE_IMAGE=legosim-real:native-eight-functional-prewarm-v1
+ARG BASE_IMAGE=chipsystemsim:native-eight-functional-prewarm-v1
 FROM ${BASE_IMAGE}
 
 USER root

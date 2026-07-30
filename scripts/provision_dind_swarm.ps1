@@ -3,9 +3,9 @@ param(
     [ValidateRange(1, 8)]
     [int]$NodeCount = 2,
 
-    [string]$SourceImage = 'legosim-real:8166851-simbricks-pthread-bfs-compat',
+    [string]$SourceImage = 'chipsystemsim:8166851-simbricks-pthread-bfs-compat',
 
-    [string]$Repository = 'legosim-real',
+    [string]$Repository = 'chipsystemsim',
 
     [string]$Tag = 'bfs-compat',
 
@@ -99,7 +99,7 @@ for ($slot = 1; $slot -lt $NodeCount; ++$slot) {
         throw "Worker $container joined but is not visible to the manager."
     }
 
-    Invoke-Docker @('node', 'update', '--label-add', "legosim.node.$slot=true", '--label-add', 'legosim.dind=true', $nodeId)
+    Invoke-Docker @('node', 'update', '--label-add', "chipsystemsim.node.$slot=true", '--label-add', 'chipsystemsim.dind=true', $nodeId)
     Invoke-Docker @('exec', $container, 'docker', 'pull', $workerImage)
 }
 

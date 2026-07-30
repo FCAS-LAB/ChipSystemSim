@@ -1,0 +1,47 @@
+diff --git a/benchmark/MoE/dram.cpp b/benchmark/MoE/dram.cpp
+index 82019ca..70be575 100644
+--- a/benchmark/MoE/dram.cpp
++++ b/benchmark/MoE/dram.cpp
+@@ -74,7 +74,7 @@ void dram_access(int accessor_x, int accessor_y) {
+         }
+         
+         // 随后调用 readsync，同步的大小包含 包头 + 数据
+-        time_end = InterChiplet::readSync(timeNow, accessor_x, accessor_y, DRAM_X, DRAM_Y, header_size + data_size, 0).m_cycle_resp;
++        time_end = InterChiplet::readSync(timeNow, accessor_x, accessor_y, DRAM_X, DRAM_Y, header_size + data_size, 0);
+         
+         // 保存数据到共享内存
+         memory_buffer[addr] = buf;
+@@ -83,7 +83,7 @@ void dram_access(int accessor_x, int accessor_y) {
+     } else {
+         // ========== 读操作 (控制信号为1) ==========
+         // 3、读操作：先调用 readsync 结束请求指令的读取
+-        time_end = InterChiplet::readSync(timeNow, accessor_x, accessor_y, DRAM_X, DRAM_Y, header_size, 0).m_cycle_resp;
++        time_end = InterChiplet::readSync(timeNow, accessor_x, accessor_y, DRAM_X, DRAM_Y, header_size, 0);
+         timeNow = time_end + true_time; // 推进时间，准备发送
+ 
+         // 从共享内存中获取请求的数据
+@@ -94,7 +94,7 @@ void dram_access(int accessor_x, int accessor_y) {
+         }
+ 
+         // 最后调用 writesync 结束发送
+-        time_end = InterChiplet::writeSync(timeNow, DRAM_X, DRAM_Y, accessor_x, accessor_y, data_size, 0).m_cycle_resp;
++        time_end = InterChiplet::writeSync(timeNow, DRAM_X, DRAM_Y, accessor_x, accessor_y, data_size, 0);
+         // 调用 sendsync 并发送数据
+         std::string sendFileName = InterChiplet::sendSync(DRAM_X, DRAM_Y, accessor_x, accessor_y);
+         if (data_size > 0) {
+diff --git a/benchmark/MoE/moe.yml b/benchmark/MoE/moe.yml
+index 5b6115e..3545238 100644
+--- a/benchmark/MoE/moe.yml
++++ b/benchmark/MoE/moe.yml
+@@ -51,7 +51,10 @@ phase1:
+     clock_rate: 1
+   # Process 7
+   - cmd: "$BENCHMARK_ROOT/bin/dram"
+-    args: []
++    # The DRAM server ignores command-line arguments, but declaring its fixed
++    # chiplet coordinate lets the distributed placement/routing generator map
++    # PipeComm traffic addressed to (1,1) to this worker.
++    args: ["1", "1"]
+     log: "dram.1.1.log"
+     is_to_stdout: false
+     clock_rate: 1

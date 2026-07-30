@@ -74,7 +74,7 @@ def write_run_files(benchmark: str, container_count: int, repetition: int) -> tu
     (run_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
     services = {
         f"node{node_id}": {
-            "image": "simbricks-legosim:latest",
+            "image": "chipsystemsim:latest",
             "command": ["--node-id", str(node_id)],
             "environment": {"SIM_CONFIG": json.dumps(config, separators=(",", ":"))},
             "networks": ["simulation"],
@@ -156,7 +156,7 @@ def main() -> None:
     parser.add_argument("--benchmarks", nargs="+", choices=sorted(WORKLOADS), default=sorted(WORKLOADS))
     parser.add_argument("--keep-runs", action="store_true")
     parser.add_argument("--append", action="store_true", help="Preserve and append existing summary.csv rows.")
-    parser.add_argument("--skip-build", action="store_true", help="Use an already-built simbricks-legosim:latest image.")
+    parser.add_argument("--skip-build", action="store_true", help="Use an already-built chipsystemsim:latest image.")
     parser.add_argument("--output-root", type=Path,
                         help="write runs, summary.csv, and REPORT.md to this separate directory")
     arguments = parser.parse_args()
@@ -168,9 +168,9 @@ def main() -> None:
     if not arguments.keep_runs and not arguments.append:
         shutil.rmtree(RESULTS / "runs", ignore_errors=True)
     if arguments.skip_build:
-        run_command(["docker", "image", "inspect", "simbricks-legosim:latest"])
+        run_command(["docker", "image", "inspect", "chipsystemsim:latest"])
     else:
-        run_command(["docker", "build", "--tag", "simbricks-legosim:latest", "--file", "docker/Dockerfile", "."])
+        run_command(["docker", "build", "--tag", "chipsystemsim:latest", "--file", "docker/Dockerfile", "."])
     rows = load_existing_rows() if arguments.append else []
     for benchmark in arguments.benchmarks:
         for container_count in (1, 2, 4, 8):

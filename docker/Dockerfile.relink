@@ -1,16 +1,16 @@
 # Relink only the PipeComm-dependent native artifacts after a transport-header
 # change. This extends a verified full image and avoids re-fetching Sniper.
-ARG BASE_IMAGE=legosim-real:8166851-simbricks-integrated
+ARG BASE_IMAGE=chipsystemsim:8166851-simbricks-integrated
 FROM ${BASE_IMAGE}
 
 COPY real/remote_pipe_comm.h real/mnsim_compat.py real/mnsim_compat.cpp real/apply_overlay.py \
-     real/worker.py real/process_proxy.py real/patch_interchiplet_pipe_drain.py /opt/legosim-distributed/
-COPY real/simbricks_pipe_router.py /opt/legosim-distributed/
+     real/worker.py real/process_proxy.py real/patch_interchiplet_pipe_drain.py /opt/chipsystemsim-distributed/
+COPY real/simbricks_pipe_router.py /opt/chipsystemsim-distributed/
 # The recorder Makefile needs PIN_ROOT; otherwise its clean/build targets are no-ops.
 RUN bash -lc 'export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=/usr; \
     source /opt/legosim/gpgpu-sim/setup_environment; \
-    python3 /opt/legosim-distributed/apply_overlay.py; \
-    python3 /opt/legosim-distributed/patch_interchiplet_pipe_drain.py; \
+    python3 /opt/chipsystemsim-distributed/apply_overlay.py; \
+    python3 /opt/chipsystemsim-distributed/patch_interchiplet_pipe_drain.py; \
     # cuda_runtime_api.cc includes PipeComm directly.  Rebuild its object and
     # the runtime shared library after installing the transport overlay;
     # rebuilding a CUDA workload alone otherwise retains the old FIFO code.

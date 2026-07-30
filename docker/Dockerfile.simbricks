@@ -1,25 +1,25 @@
 # Add the official SimBricks distributed socket proxy and a BaseIf endpoint to
 # the verified native LEGOSim runtime. This is intentionally a distinct layer:
 # runtime-only proxy changes do not force a SimBricks rebuild.
-ARG BASE_IMAGE=legosim-real:8166851-fixed
+ARG BASE_IMAGE=chipsystemsim:8166851-fixed
 FROM ${BASE_IMAGE}
 
 COPY third_party/simbricks /opt/simbricks
-COPY real/simbricks_base_probe.c /opt/legosim-distributed/
-COPY real/simbricks_pipe_gateway.cc real/simbricks_pipe_protocol.h /opt/legosim-distributed/
-COPY real/worker.py real/process_proxy.py real/simbricks_pipe_router.py real/simbricks_worker_supervisor.py /opt/legosim-distributed/
+COPY real/simbricks_base_probe.c /opt/chipsystemsim-distributed/
+COPY real/simbricks_pipe_gateway.cc real/simbricks_pipe_protocol.h /opt/chipsystemsim-distributed/
+COPY real/worker.py real/process_proxy.py real/simbricks_pipe_router.py real/simbricks_worker_supervisor.py /opt/chipsystemsim-distributed/
 
 RUN make -C /opt/simbricks dist/sockets/net_sockets \
     && gcc -O2 -Wall -Wextra -Werror -Wno-error=unused-parameter -std=c11 \
         -I/opt/simbricks -I/opt/simbricks/lib \
-        /opt/legosim-distributed/simbricks_base_probe.c \
+        /opt/chipsystemsim-distributed/simbricks_base_probe.c \
         /opt/simbricks/lib/simbricks/base/if.c \
         -o /usr/local/bin/simbricks-base-probe \
     && gcc -O2 -Wall -Wextra -Werror -Wno-error=unused-parameter -std=c11 \
         -I/opt/simbricks -I/opt/simbricks/lib -c /opt/simbricks/lib/simbricks/base/if.c \
         -o /tmp/simbricks-base-if.o \
     && g++ -O2 -Wall -Wextra -Werror -Wno-error=unused-parameter -std=c++17 -pthread \
-        -I/opt/simbricks -I/opt/simbricks/lib -I/opt/legosim-distributed \
-        /opt/legosim-distributed/simbricks_pipe_gateway.cc \
+        -I/opt/simbricks -I/opt/simbricks/lib -I/opt/chipsystemsim-distributed \
+        /opt/chipsystemsim-distributed/simbricks_pipe_gateway.cc \
         /tmp/simbricks-base-if.o \
         -o /usr/local/bin/simbricks-pipe-gateway

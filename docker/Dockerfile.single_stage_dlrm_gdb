@@ -1,9 +1,9 @@
 # Diagnostic-only DLRM image. It preserves the patched distributed runtime
 # and adds gdb so one remote GPU process can emit a symbolic crash backtrace.
-ARG BASE_IMAGE=legosim-real:8166851-simbricks-pipedrain
+ARG BASE_IMAGE=chipsystemsim:8166851-simbricks-pipedrain
 FROM ${BASE_IMAGE}
 
-COPY LegoSimbricks/real/simbricks_pipe_router.py /opt/legosim-distributed/
+COPY ChipSystemSim/real/simbricks_pipe_router.py /opt/chipsystemsim-distributed/
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gdb && \

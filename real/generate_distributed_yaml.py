@@ -101,7 +101,7 @@ def main() -> None:
                 staged_arguments.extend(["--stage-file", f"{source}:{destination}"])
         process["cmd"] = "python3"
         process["args"] = [
-            "/opt/legosim-distributed/process_proxy.py", "--worker", worker,
+            "/opt/chipsystemsim-distributed/process_proxy.py", "--worker", worker,
             "--process-id", f"{phase}-{index}", "--pre-copy", pre_copy,
             *staged_arguments,
             *[argument for asset in shared_assets for argument in ("--shared-asset", asset)],

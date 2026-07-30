@@ -9,6 +9,6 @@ It embeds the configuration in `SIM_CONFIG`, so no host bind mount is needed.
 Run it from the repository root after building the image:
 
 ```bash
-docker build -t simbricks-legosim:latest -f docker/Dockerfile .
+docker build -t chipsystemsim:latest -f docker/Dockerfile .
 docker compose -f examples/bfs-4nodes-compose.json up --abort-on-container-exit
 ```

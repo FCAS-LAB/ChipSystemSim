@@ -3,7 +3,7 @@
 # then install the CUDA compiler from Ubuntu's multiverse repository.  The
 # runtime only needs CUDA's userspace toolkit because GPGPU-Sim is compiled
 # into the image; no host GPU is required for these simulator workloads.
-ARG BASE_IMAGE=simbricks-legosim:latest
+ARG BASE_IMAGE=chipsystemsim:latest
 FROM ${BASE_IMAGE}
 
 ARG LEGOSIM_REF=816685160b54259d82fa3c913135ac9f2c68aeff
@@ -16,8 +16,8 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 WORKDIR /opt/legosim
 COPY real/entrypoint.sh /usr/local/bin/legosim-run
 COPY real/build-native.sh /usr/local/bin/legosim-build-native
-COPY real/fifo_broker.py real/worker.py real/process_proxy.py real/remote_pipe_comm.h real/apply_overlay.py /opt/legosim-distributed/
+COPY real/fifo_broker.py real/worker.py real/process_proxy.py real/remote_pipe_comm.h real/apply_overlay.py /opt/chipsystemsim-distributed/
 RUN chmod +x /usr/local/bin/legosim-run
 RUN chmod +x /usr/local/bin/legosim-build-native
-RUN python3 /opt/legosim-distributed/apply_overlay.py && /usr/local/bin/legosim-build-native
+RUN python3 /opt/chipsystemsim-distributed/apply_overlay.py && /usr/local/bin/legosim-build-native
 ENTRYPOINT ["/usr/local/bin/legosim-run"]

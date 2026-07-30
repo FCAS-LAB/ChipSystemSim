@@ -157,13 +157,13 @@ def main() -> None:
 
         wait_for_ready(ready_paths)
         router = start([
-            "python3", "/opt/legosim-distributed/simbricks_pipe_router.py", "--slot", str(arguments.slot),
+            "python3", "/opt/chipsystemsim-distributed/simbricks_pipe_router.py", "--slot", str(arguments.slot),
             "--routing", str(arguments.routing), "--port", str(arguments.router_port),
         ])
         children.append(router)
         worker_environment = {**os.environ, "LEGOSIM_PIPE_GATEWAY": f"127.0.0.1:{arguments.router_port}"}
         worker = subprocess.Popen(
-            ["python3", "/opt/legosim-distributed/worker.py", "--port", str(arguments.worker_port)],
+            ["python3", "/opt/chipsystemsim-distributed/worker.py", "--port", str(arguments.worker_port)],
             stdout=sys.stdout.buffer,
             stderr=sys.stderr.buffer,
             env=worker_environment,

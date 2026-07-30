@@ -1,6 +1,6 @@
 # Build the documented single-stage LegoSim matmul benchmark against the
 # already validated distributed LEGOSim runtime.
-ARG BASE_IMAGE=legosim-real:8166851-simbricks-integrated
+ARG BASE_IMAGE=chipsystemsim:8166851-simbricks-integrated
 FROM ${BASE_IMAGE}
 
 COPY single_stage_simulator/benchmark/matmul /opt/legosim/benchmark/matmul

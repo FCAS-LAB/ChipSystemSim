@@ -3,7 +3,7 @@
 # The parent image is the fully built native LEGOSim toolchain. Keeping this
 # layer separate means a change to a Python proxy does not re-download Pin or
 # rebuild GPGPU-Sim. Release images must still be produced with Dockerfile.real.
-ARG BASE_IMAGE=legosim-real:8166851
+ARG BASE_IMAGE=chipsystemsim:8166851
 FROM ${BASE_IMAGE}
 
 # MNSIM is an upstream LEGOSIM component. Pin its Python runtime here rather
@@ -24,7 +24,7 @@ RUN mkdir -p /home/qc/Chiplet_Heterogeneous_newVersion_gem5/Chiplet_Heterogeneou
     && ln -s /usr/bin/python3 /usr/local/bin/python
 
 COPY real/entrypoint.sh /usr/local/bin/legosim-run
-COPY real/fifo_broker.py real/worker.py real/process_proxy.py /opt/legosim-distributed/
+COPY real/fifo_broker.py real/worker.py real/process_proxy.py /opt/chipsystemsim-distributed/
 RUN chmod +x /usr/local/bin/legosim-run
 
 ENTRYPOINT ["/usr/local/bin/legosim-run"]

@@ -1,6 +1,6 @@
 # Diagnostic-only DLRM image. ASan instruments benchmark host code while
 # retaining the same integrated GPGPU-Sim and SimBricks runtime as production.
-ARG BASE_IMAGE=legosim-real:8166851-simbricks-assets
+ARG BASE_IMAGE=chipsystemsim:8166851-simbricks-assets
 FROM ${BASE_IMAGE}
 
 COPY single_stage_simulator/benchmark/dlrm_cpp_large/ /opt/legosim/benchmark/dlrm_cpp_large/

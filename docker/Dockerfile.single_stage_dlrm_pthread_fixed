@@ -1,8 +1,8 @@
-ARG BASE_IMAGE=legosim-real:single-stage-dlrm_cpp_large-worker-fixed
+ARG BASE_IMAGE=chipsystemsim:single-stage-dlrm_cpp_large-worker-fixed
 FROM ${BASE_IMAGE}
 
-COPY LegoSimbricks/real/patch_sniper_pthread_clone3.py /opt/legosim-distributed/
+COPY ChipSystemSim/real/patch_sniper_pthread_clone3.py /opt/chipsystemsim-distributed/
 
-RUN bash -lc 'python3 /opt/legosim-distributed/patch_sniper_pthread_clone3.py && \
+RUN bash -lc 'python3 /opt/chipsystemsim-distributed/patch_sniper_pthread_clone3.py && \
     make -C /opt/legosim/snipersim/sift/recorder \
       PIN_ROOT=/opt/legosim/snipersim/pin_kit -j"$(nproc)"'

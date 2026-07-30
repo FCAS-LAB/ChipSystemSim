@@ -17,7 +17,7 @@ def main() -> None:
     parser.add_argument("--workload-yaml", type=Path, required=True)
     parser.add_argument("--image", required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--stack-name", default="legosim")
+    parser.add_argument("--stack-name", default="chipsystemsim")
     parser.add_argument("--workload-target", default="/opt/legosim/workload.yml",
                         help="absolute in-container path at which to mount the derived YAML")
     parser.add_argument("--topology-width", type=int, required=True)
@@ -42,7 +42,7 @@ def main() -> None:
             # This command is passed to the image's legosim-run entry point.
             "command": [image_yaml_path, "-w", str(arguments.topology_width), "-f", str(arguments.flit_size)],
             "configs": [{"source": "workload", "target": image_yaml_path, "mode": 0o444}],
-            "networks": {"legosim": {"aliases": ["coordinator"]}},
+            "networks": {"chipsystemsim": {"aliases": ["coordinator"]}},
             "deploy": {"placement": {"constraints": ["node.role == manager"]}, "restart_policy": {"condition": "none"}},
         },
     }
@@ -51,15 +51,15 @@ def main() -> None:
             "image": arguments.image,
             "entrypoint": [
                 "/bin/bash", "-lc",
-                environment_prefix + "python3 /opt/legosim-distributed/simbricks_worker_supervisor.py "
+                environment_prefix + "python3 /opt/chipsystemsim-distributed/simbricks_worker_supervisor.py "
                 f"--slot {slot} --topology /run/config/topology.json --routing /run/config/routing.json",
             ],
             "configs": [
                 {"source": "topology", "target": "/run/config/topology.json", "mode": 0o444},
                 {"source": "routing", "target": "/run/config/routing.json", "mode": 0o444},
             ],
-            "networks": {"legosim": {"aliases": [f"worker-{slot}", f"transport-{slot}"]}},
-            "deploy": {"placement": {"constraints": [f"node.labels.legosim.node.{slot} == true"]}},
+            "networks": {"chipsystemsim": {"aliases": [f"worker-{slot}", f"transport-{slot}"]}},
+            "deploy": {"placement": {"constraints": [f"node.labels.chipsystemsim.node.{slot} == true"]}},
         }
         if arguments.transport_ptrace:
             transport_service["cap_add"] = ["SYS_PTRACE"]
@@ -71,7 +71,7 @@ def main() -> None:
             "topology": {"file": str(arguments.topology.resolve())},
             "routing": {"file": str(arguments.routing.resolve())},
         },
-        "networks": {"legosim": {"driver": "overlay", "attachable": True}},
+        "networks": {"chipsystemsim": {"driver": "overlay", "attachable": True}},
     }
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_text(yaml.safe_dump(stack, sort_keys=False), encoding="utf-8")

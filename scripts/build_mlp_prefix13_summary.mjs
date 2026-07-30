@@ -125,7 +125,7 @@ summary.showGridLines = false;
 raw.showGridLines = false;
 
 summary.mergeCells("A1:M1");
-summary.getRange("A1").values = [["LegoSimbricks 原生 MLP：13 事件通信前缀验证汇总"]];
+summary.getRange("A1").values = [["ChipSystemSim 原生 MLP：13 事件通信前缀验证汇总"]];
 summary.mergeCells("A2:M2");
 summary.getRange("A2").values = [[
   "范围：已验证的固定通信前缀（非完整 18 事件 MLP）。每个节点数仅有 1 次成功运行；不可据此报告均值、置信区间或完整端到端加速比。",

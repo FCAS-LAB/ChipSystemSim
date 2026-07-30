@@ -1,10 +1,10 @@
 # Native MLP runtime for contiguous 1/2/4/8 placement.  It includes the
 # remote phase-two PopNet proxy and safe coordinator-to-worker input staging,
 # as well as the PipeComm metric classifier.
-ARG BASE_IMAGE=legosim-real:native-mlp-parallel-window-v1
+ARG BASE_IMAGE=chipsystemsim:native-mlp-parallel-window-v1
 FROM ${BASE_IMAGE}
 
 USER root
 COPY real/process_proxy.py real/worker.py real/simbricks_pipe_router.py \
      real/simbricks_worker_supervisor.py \
-     /opt/legosim-distributed/
+     /opt/chipsystemsim-distributed/

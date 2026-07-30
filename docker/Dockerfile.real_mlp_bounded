@@ -2,12 +2,12 @@
 # -1 sentinel termination protocol.  The optional bounded request loop is for
 # diagnostics only. The base contains the validated Sniper pthread repair; only
 # the affected MLP CUDA executable is rebuilt here.
-FROM legosim-real:8166851-simbricks-pthread-fixed
+FROM chipsystemsim:8166851-simbricks-pthread-fixed
 
-COPY real/patch_mlp_bounded_iterations.py /opt/legosim-distributed/
+COPY real/patch_mlp_bounded_iterations.py /opt/chipsystemsim-distributed/
 
 RUN bash -lc 'export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=/usr; \
     source /opt/legosim/gpgpu-sim/setup_environment; \
-    python3 /opt/legosim-distributed/patch_mlp_bounded_iterations.py; \
+    python3 /opt/chipsystemsim-distributed/patch_mlp_bounded_iterations.py; \
     make -C /opt/legosim/artifact/MLP clean_all; \
     make -C /opt/legosim/artifact/MLP NVCC="nvcc -ccbin /usr/bin/g++-10"'

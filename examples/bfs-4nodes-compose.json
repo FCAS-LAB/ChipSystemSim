@@ -1,7 +1,7 @@
 {
   "services": {
     "node0": {
-      "image": "simbricks-legosim:latest",
+      "image": "chipsystemsim:latest",
       "command": [
         "--node-id",
         "0"
@@ -14,7 +14,7 @@
       ]
     },
     "node1": {
-      "image": "simbricks-legosim:latest",
+      "image": "chipsystemsim:latest",
       "command": [
         "--node-id",
         "1"
@@ -27,7 +27,7 @@
       ]
     },
     "node2": {
-      "image": "simbricks-legosim:latest",
+      "image": "chipsystemsim:latest",
       "command": [
         "--node-id",
         "2"
@@ -40,7 +40,7 @@
       ]
     },
     "node3": {
-      "image": "simbricks-legosim:latest",
+      "image": "chipsystemsim:latest",
       "command": [
         "--node-id",
         "3"

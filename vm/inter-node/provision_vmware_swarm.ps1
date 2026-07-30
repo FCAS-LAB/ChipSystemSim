@@ -2,7 +2,7 @@
 param(
     [ValidateRange(1, 8)]
     [int]$NodeCount = 1,
-    [string]$VmRoot = 'E:\LegoSimbricksVMs',
+    [string]$VmRoot = 'E:\ChipSystemSimVMs',
     [string]$VmwareRoot = 'E:\VMware',
     [string]$SnapshotName = 'clean-docker-ready',
     [string]$RegistryAddress = '192.168.244.1:5000',
@@ -175,7 +175,7 @@ foreach ($node in $nodes) {
     $line = $lines | Where-Object { $_ -match " $([regex]::Escape($node.Name)) Ready$" } | Select-Object -First 1
     if (-not $line) { throw "Could not find node ID for $($node.Name)" }
     $id = ($line -split '\s+')[0]
-    Invoke-GuestSsh -Address $manager.Address -Command "sudo docker node update --label-add legosim.node.$($node.Slot)=true $id >/dev/null"
+    Invoke-GuestSsh -Address $manager.Address -Command "sudo docker node update --label-add chipsystemsim.node.$($node.Slot)=true $id >/dev/null"
 }
 
 Write-Output 'VMware Docker Swarm is ready:'

@@ -9,7 +9,7 @@ and creates a private legosim administrator for vmrun automation.
 #>
 [CmdletBinding()]
 param(
-    [string]$VmRoot = 'E:\LegoSimbricksVMs',
+    [string]$VmRoot = 'E:\ChipSystemSimVMs',
     [string]$VmwareRoot = 'E:\VMware',
     [int]$MemoryMiB = 1536,
     [int]$Processors = 2
@@ -109,7 +109,7 @@ runcmd:
   - systemctl enable --now docker
   - systemctl restart ssh
   - usermod -aG docker legosim
-  - mkdir -p /opt/legosim-swarm
+  - mkdir -p /opt/chipsystemsim-swarm
   - touch /var/lib/legosim-bootstrap-ready
 "@
 # Bump this whenever the seed schema changes.  NoCloud then applies the

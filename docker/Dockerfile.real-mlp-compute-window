@@ -1,14 +1,14 @@
 # Native MLP with the repaired sequential GPGPU-Sim runtime and a finite,
 # environment-controlled training window.  No synthetic workload is added.
-ARG BASE_IMAGE=legosim-real:native-eight-functional-sequential-v1
+ARG BASE_IMAGE=chipsystemsim:native-eight-functional-sequential-v1
 FROM ${BASE_IMAGE}
 
 USER root
-COPY real/patch_mlp_train_iterations.py /opt/legosim-distributed/
+COPY real/patch_mlp_train_iterations.py /opt/chipsystemsim-distributed/
 
 RUN /bin/bash -lc 'set -euo pipefail; \
     export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=${CUDA_INSTALL_PATH:-/usr}; \
     set +u; source /opt/legosim/gpgpu-sim/setup_environment; set -u; \
-    python3 /opt/legosim-distributed/patch_mlp_train_iterations.py; \
+    python3 /opt/chipsystemsim-distributed/patch_mlp_train_iterations.py; \
     make -C /opt/legosim/artifact/MLP clean_all; \
     make -C /opt/legosim/artifact/MLP NVCC="nvcc -ccbin /usr/bin/g++-10"'

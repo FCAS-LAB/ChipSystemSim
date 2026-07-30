@@ -1,0 +1,79 @@
+diff --git a/interchiplet/srcs/interchiplet.cpp b/interchiplet/srcs/interchiplet.cpp
+index 10f6444..b7a7718 100644
+--- a/interchiplet/srcs/interchiplet.cpp
++++ b/interchiplet/srcs/interchiplet.cpp
+@@ -162,6 +162,11 @@ void parse_command(char* __pipe_buf, ProcessStruct* __proc_struct, int __stdin_f
+ 
+ void* bridge_thread(void* __args_ptr) {
+     ProcessStruct* proc_struct = (ProcessStruct*)__args_ptr;
++    auto trace_bridge = [&](const std::string& message) {
++        std::ofstream trace_file("bridge-trace.log", std::ios::app);
++        trace_file << "thread=" << proc_struct->m_thread << " phase=" << proc_struct->m_phase
++                   << " " << message << std::endl;
++    };
+ 
+     int pipe_stdin[2];   // Pipe to send data to child process
+     int pipe_stdout[2];  // Pipe to receive data from child process
+@@ -269,6 +274,12 @@ void* bridge_thread(void* __args_ptr) {
+         while (true) {
+             int res = poll(fd_list, 2, 1000);
+             if (res == -1) {
++                // A normal child exit delivers SIGCHLD to every bridge
++                // thread.  poll(2) then returns EINTR in unrelated threads;
++                // retry instead of treating that signal as a phase failure.
++                if (errno == EINTR) {
++                    continue;
++                }
+                 perror("poll");
+                 break;
+             }
+@@ -277,7 +288,20 @@ void* bridge_thread(void* __args_ptr) {
+             if (fd_list[0].revents & POLL_IN) {
+                 has_stdout = true;
+                 int res = read(stdout_fd, pipe_buf, PIPE_BUF_SIZE);
+-                if (res <= 0) break;
++                // A remote proxy can close one forwarded stream before its
++                // simulator child has terminated.  Do not end this bridge
++                // thread on EOF; keep polling the remaining stream and wait
++                // for the child process's actual exit status below.
++                if (res == 0) {
++                    fd_list[0].fd = -1;
++                    continue;
++                }
++                if (res < 0) {
++                    trace_bridge("stdout-read-failed");
++                    spdlog::error("Bridge thread {} stdout read failed: {}.", proc_struct->m_thread,
++                                  strerror(errno));
++                    break;
++                }
+                 pipe_buf[res] = '\0';
+                 // log redirection.
+                 log_file.write(pipe_buf, res).flush();
+@@ -292,7 +316,16 @@ void* bridge_thread(void* __args_ptr) {
+             if (fd_list[1].revents & POLL_IN) {
+                 has_stdout = true;
+                 int res = read(stderr_fd, pipe_buf, PIPE_BUF_SIZE);
+-                if (res <= 0) break;
++                if (res == 0) {
++                    fd_list[1].fd = -1;
++                    continue;
++                }
++                if (res < 0) {
++                    trace_bridge("stderr-read-failed");
++                    spdlog::error("Bridge thread {} stderr read failed: {}.", proc_struct->m_thread,
++                                  strerror(errno));
++                    break;
++                }
+                 pipe_buf[res] = '\0';
+                 // log redirection.
+                 log_file.write(pipe_buf, res).flush();
+@@ -316,6 +349,9 @@ void* bridge_thread(void* __args_ptr) {
+                     spdlog::error("Simulation process {} terminate with status = {}.",
+                                   proc_struct->m_pid2, status);
+                 }
++                spdlog::info("Bridge thread {} returning after child {} exit.",
++                             proc_struct->m_thread, proc_struct->m_pid2);
++                trace_bridge("child-exit status=" + std::to_string(status));
+                 break;
+             }
+         }

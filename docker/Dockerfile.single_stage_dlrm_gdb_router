@@ -1,5 +1,5 @@
 # Add only router request auditing to the already built gdb DLRM image.
-ARG BASE_IMAGE=legosim-real:single-stage-dlrm_cpp_large-gdb
+ARG BASE_IMAGE=chipsystemsim:single-stage-dlrm_cpp_large-gdb
 FROM ${BASE_IMAGE}
 
-COPY LegoSimbricks/real/simbricks_pipe_router.py /opt/legosim-distributed/
+COPY ChipSystemSim/real/simbricks_pipe_router.py /opt/chipsystemsim-distributed/

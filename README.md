@@ -1,4 +1,4 @@
-# LegoSimbricks：LEGOSim、SimBricks 与 Docker Swarm 的分布式实验工程
+# ChipSystemSim：LEGOSim、SimBricks 与 Docker Swarm 的分布式实验工程
 
 本仓库将上游 **LEGOSim** 的异构工作负载进程图接入 **SimBricks BaseIf** 传输，
 并用 Docker Swarm 将 phase-1 模拟器分布到 1、2、4 或 8 台 Linux 仿真机。
@@ -88,8 +88,8 @@ git -C third_party/simbricks apply ../../patches/simbricks/0001-legosim-low-rate
 - 至少 1 台 manager 和最多 7 台 worker；每台均可访问同一个 Docker registry。
 - manager 与 worker 使用可互通的固定私网 IP；Swarm 所需 TCP 2377、TCP/UDP 7946、
   UDP 4789 必须在 VM 网络中可达。
-- 每个节点需预先加入 Swarm 并标记 `legosim.node.0=true` 至
-  `legosim.node.7=true`。本项目不会自动把未标记节点用于实验。
+- 每个节点需预先加入 Swarm 并标记 `chipsystemsim.node.0=true` 至
+  `chipsystemsim.node.7=true`。本项目不会自动把未标记节点用于实验。
 - Docker 构建阶段需要网络以安装依赖和获取基础镜像；运行阶段所有节点都必须能拉取
   完全相同的镜像 tag/digest。
 
@@ -112,15 +112,15 @@ git -C third_party/simbricks apply ../../patches/simbricks/0001-legosim-low-rate
 
 ```bash
 docker node ls
-docker node update --label-add legosim.node.0=true NODE_0
-docker node update --label-add legosim.node.1=true NODE_1
-# 继续至 legosim.node.7；一节点实验只需要 node.0。
+docker node update --label-add chipsystemsim.node.0=true NODE_0
+docker node update --label-add chipsystemsim.node.1=true NODE_1
+# 继续至 chipsystemsim.node.7；一节点实验只需要 node.0。
 ```
 
 在 Windows/VMware 环境，可先创建基础 VM，再按需要复制和配置 Swarm：
 
 ```powershell
-Set-Location D:\root\work2026\LegoSimbricks
+Set-Location D:\root\work2026\ChipSystemSim
 .\scripts\provision_vmware_base.ps1
 .\scripts\provision_vmware_swarm.ps1 -NodeCount 8
 ```
@@ -159,9 +159,9 @@ Set-Location D:\root\work2026\LegoSimbricks
 ```bash
 cd /root/work2026
 docker build --progress=plain \
-  -t REGISTRY/legosim-real:native-eight-functional \
-  -f LegoSimbricks/docker/Dockerfile.real-eight-functional .
-docker push REGISTRY/legosim-real:native-eight-functional
+  -t REGISTRY/chipsystemsim:native-eight-functional \
+  -f ChipSystemSim/docker/Dockerfile.real-eight-functional .
+docker push REGISTRY/chipsystemsim:native-eight-functional
 ```
 
 该 Dockerfile 依赖已经构建好的、包含 LEGOSim、SimBricks 与运行时 overlay 的基础
@@ -180,13 +180,13 @@ docker push REGISTRY/legosim-real:native-eight-functional
 配置准备好后，从 Linux 构建机运行远程矩阵驱动器：
 
 ```bash
-cd /root/work2026/LegoSimbricks
+cd /root/work2026/ChipSystemSim
 python3 scripts/run_remote_functional_matrix.py \
   --manager 192.168.244.135 \
   --password-file /secure/legosim-guest-password.txt \
   --source-root results/functional-native-eight \
   --output-root results/native-eight-functional \
-  --image REGISTRY/legosim-real:native-eight-functional \
+  --image REGISTRY/chipsystemsim:native-eight-functional \
   --workloads mlp dlrm resnet bfs fft pagerank pde moe \
   --nodes 1 2 4 8 --timeout-seconds 90 --observation-seconds 120
 ```
@@ -256,7 +256,7 @@ python3 scripts/run_mlp_scalability.py \
   --source-root results/functional-matrix \
   --source-suffix=-insn1000 \
   --output-root results/mlp-bounded-native \
-  --image REGISTRY/legosim-real:native-mlp-fixed-eight-stagger-v1 \
+  --image REGISTRY/chipsystemsim:native-mlp-fixed-eight-stagger-v1 \
   --nodes 1 2 4 8 --repetitions 1 \
   --timeout-seconds 180 --expected-pipecomm-events 13
 ```
@@ -272,7 +272,7 @@ Swarm 的相同镜像 tag 不足以保证内容一致。开始一个多机点位
 image ID（或更严格的 registry digest）：
 
 ```bash
-IMAGE=REGISTRY/legosim-real:native-mlp-fixed-eight-stagger-v1
+IMAGE=REGISTRY/chipsystemsim:native-mlp-fixed-eight-stagger-v1
 docker image inspect "$IMAGE" --format '{{.Id}}'
 ```
 

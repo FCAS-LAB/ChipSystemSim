@@ -26,7 +26,7 @@ long long runCompatibilityModel(const char* workload, int id_x, int id_y) {
     const std::string result_path = stem + ".res";
     const std::string audit_path = stem + ".json";
     const std::string command =
-        "python3 /opt/legosim-distributed/mnsim_compat.py --workload " +
+        "python3 /opt/chipsystemsim-distributed/mnsim_compat.py --workload " +
         std::string(workload) + " --id1 " + std::to_string(id_x) + " --id2 " +
         std::to_string(id_y) + " --payload-elements " + std::to_string(kElements) +
         " --element-bytes " + std::to_string(kElementBytes) + " --output " +

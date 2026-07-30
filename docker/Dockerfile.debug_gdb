@@ -1,7 +1,7 @@
 # Diagnostic-only image.  It layers GDB on the validated native LEGOSim image
 # so an upstream CUDA process can produce a backtrace without changing the
 # workload binary or its runtime environment.
-FROM legosim-real:8166851-simbricks-pthread-fixed
+FROM chipsystemsim:8166851-simbricks-pthread-fixed
 
 USER root
 RUN apt-get update \

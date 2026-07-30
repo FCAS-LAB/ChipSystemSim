@@ -1,5 +1,6 @@
-# Diagnostic layer for the quiet native CUDA runtime.
-FROM chipsystemsim:8166851-simbricks-pthread-bfs-cudaquiet
+# Diagnostic-only layer for capturing native simulator crashes.
+ARG BASE_IMAGE=chipsystemsim:native-eight-functional-prewarm-v1
+FROM ${BASE_IMAGE}
 
 USER root
 RUN apt-get update \

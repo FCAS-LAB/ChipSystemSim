@@ -3,7 +3,7 @@
 # The base already contains LEGOSim, SimBricks BaseIf transport, and the
 # distributed runtime overlay. The four single-stage sources are copied into
 # stable in-image paths and compiled with the same GPGPU-Sim CUDA toolchain.
-ARG BASE_IMAGE=legosim-real:native-base-functional-metrics-v1
+ARG BASE_IMAGE=chipsystemsim:native-base-functional-metrics-v1
 FROM ${BASE_IMAGE}
 
 COPY ../single_stage_simulator/benchmark/FFT /opt/legosim/benchmark/fft

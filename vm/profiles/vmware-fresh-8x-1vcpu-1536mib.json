@@ -2,7 +2,7 @@
   "schema_version": 1,
   "profile_name": "vmware-fresh-8x-1vcpu-1536mib",
   "description": "Verified small-memory eight-node LEGOSim-SimBricks Docker Swarm profile for fixed-process-count 1/2/4/8 placement experiments.",
-  "vm_root_default": "E:\\LegoSimbricksVMs",
+  "vm_root_default": "E:\\ChipSystemSimVMs",
   "node_directory": "fresh-nodes",
   "node_name_pattern": "legosim-node-{slot}-fresh",
   "node_count": 8,

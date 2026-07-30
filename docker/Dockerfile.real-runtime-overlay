@@ -3,8 +3,8 @@
 # Native LEGOSim binaries are supplied by the pinned base image.  This layer
 # intentionally replaces only the distributed worker/proxy implementation, so
 # an orchestration change does not trigger an expensive rebuild of GPGPU-Sim.
-ARG BASE_IMAGE=legosim-real:8166851-simbricks-pthread-fixed
+ARG BASE_IMAGE=chipsystemsim:8166851-simbricks-pthread-fixed
 FROM ${BASE_IMAGE}
 
 COPY real/worker.py real/process_proxy.py real/simbricks_worker_supervisor.py \
-     real/simbricks_pipe_router.py /opt/legosim-distributed/
+     real/simbricks_pipe_router.py /opt/chipsystemsim-distributed/

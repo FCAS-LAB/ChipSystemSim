@@ -100,7 +100,7 @@ def run_one(benchmark: str, image: str, output_root: Path, timeout_s: int,
     routing = run_dir / "routing.json"
     workload = run_dir / "workload.yml"
     stack_file = run_dir / "stack.yml"
-    stack = f"legosim_screen_{benchmark.lower()}"
+    stack = f"chipsystemsim_screen_{benchmark.lower()}"
     width, flit_size = mesh_options(source_yaml)
     result: dict[str, object] = {
         "benchmark": benchmark, "source_yaml": str(source_yaml), "image": image,
@@ -196,7 +196,7 @@ def main() -> None:
     arguments.output_dir.mkdir(parents=True, exist_ok=True)
     summary = []
     for benchmark in arguments.benchmarks:
-        image = arguments.image or f"legosim-real:single-stage-{benchmark.lower()}"
+        image = arguments.image or f"chipsystemsim:single-stage-{benchmark.lower()}"
         entry = run_one(benchmark, image, arguments.output_dir, arguments.timeout_seconds,
                         arguments.gdb_process_index, arguments.transport_ptrace, arguments.sniper_cores,
                         arguments.sniper_fast_forward, arguments.sniper_maxthreads)

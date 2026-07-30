@@ -1,5 +1,5 @@
 # Rebuild only the upstream coordinator after fixing remote-stream EOF handling.
-ARG BASE_IMAGE=192.168.244.1:5001/legosim-real:native-mlp-fixed-eight-stagger-v1
+ARG BASE_IMAGE=192.168.244.1:5001/chipsystemsim:native-mlp-fixed-eight-stagger-v1
 FROM ${BASE_IMAGE}
 
 USER root

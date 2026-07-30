@@ -1,11 +1,11 @@
 # Production fallback for the upstream BFS CUDA/GPGPU-Sim incompatibility.
 # All other workloads retain their original binaries and GPGPU-Sim runtime.
-FROM legosim-real:8166851-simbricks-pthread-fixed
+FROM chipsystemsim:8166851-simbricks-pthread-fixed
 
-COPY real/bfs_cuda_compat.cpp real/simbricks_worker_supervisor.py /opt/legosim-distributed/
+COPY real/bfs_cuda_compat.cpp real/simbricks_worker_supervisor.py /opt/chipsystemsim-distributed/
 
 RUN bash -lc 'g++ -std=c++17 -O2 -Wall -Wextra -Werror \
     -I/opt/legosim/interchiplet/includes \
-    /opt/legosim-distributed/bfs_cuda_compat.cpp \
+    /opt/chipsystemsim-distributed/bfs_cuda_compat.cpp \
     -L/opt/legosim/gpgpu-sim/lib/gcc-/cuda-11050/release -lcudart -lrt -lpthread \
     -o /opt/legosim/artifact/bfs_cuda/bin/bfs_cu'

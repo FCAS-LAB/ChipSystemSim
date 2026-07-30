@@ -217,7 +217,7 @@ def deploy_sample(
     # Docker retains historical task logs for a service name after stack
     # removal. Include the output-root-derived ID so no sample can read a
     # previous experiment's PipeComm records.
-    stack = f"legosim_mlp_scale_{run_id}_{node_count}_rep_{repetition}"
+    stack = f"chipsystemsim_mlp_scale_{run_id}_{node_count}_rep_{repetition}"
     remote_directory = f"/home/legosim/mlp-scalability/{stack}"
     output_directory.mkdir(parents=True, exist_ok=False)
     remote_command(client, f"mkdir -p {remote_directory}")

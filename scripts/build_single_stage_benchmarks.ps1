@@ -12,7 +12,7 @@ param(
     [string[]]$Benchmarks = @(
         'matmul', 'BFS', 'FFT', 'Pagerank', 'PDE', 'MLP', 'resnet', 'dlrm_cpp_large'
     ),
-    [string]$BaseImage = 'legosim-real:8166851-simbricks-integrated',
+    [string]$BaseImage = 'chipsystemsim:8166851-simbricks-integrated',
     [string]$OutputDirectory
 )
 
@@ -32,7 +32,7 @@ foreach ($benchmark in $Benchmarks) {
     $sourceDirectory = Join-Path $sourceRoot $benchmark
     $yamlFiles = @(Get-ChildItem -Path $sourceDirectory -Filter '*.yml' -File -ErrorAction SilentlyContinue)
     $complete = (Test-Path (Join-Path $sourceDirectory 'makefile')) -and $yamlFiles.Count -gt 0
-    $image = "legosim-real:single-stage-$($benchmark.ToLower())"
+    $image = "chipsystemsim:single-stage-$($benchmark.ToLower())"
     $logPath = Join-Path $OutputDirectory "$benchmark.build.log"
     $entry = [ordered]@{
         benchmark = $benchmark

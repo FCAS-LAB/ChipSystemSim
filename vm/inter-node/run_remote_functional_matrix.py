@@ -19,7 +19,7 @@ import paramiko
 import yaml
 
 
-DEFAULT_IMAGE = "192.168.244.1:5001/legosim-real:native-base-functional-ready"
+DEFAULT_IMAGE = "192.168.244.1:5001/chipsystemsim:native-base-functional-ready"
 PHASE_ONE_PROXY = re.compile(r"proxy: started process_id=phase1-\d+")
 PHASE_ONE_COUNTS = {
     "mlp": 7, "dlrm": 2, "resnet": 7, "bfs": 7,
@@ -45,7 +45,7 @@ def wait_for_removal(client: paramiko.SSHClient, stack: str) -> None:
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
         _, stacks = remote_command(client, "sudo docker stack ls --format '{{.Name}}'")
-        network_code, _ = remote_command(client, f"sudo docker network inspect {stack}_legosim")
+        network_code, _ = remote_command(client, f"sudo docker network inspect {stack}_chipsystemsim")
         if (stack not in {line.strip() for line in stacks.splitlines()} and network_code != 0):
             return
         time.sleep(1)
@@ -89,7 +89,7 @@ def run_point(client: paramiko.SSHClient, workload: str, source_directory: Path,
               node_count: int, timeout_seconds: int, observation_seconds: int,
               image: str) -> dict[str, object]:
     """Deploy one placement and collect bounded functional-startup evidence."""
-    stack = f"legosim_{workload}_functional_{node_count}"
+    stack = f"chipsystemsim_{workload}_functional_{node_count}"
     remote_directory = f"/home/legosim/functional-matrix/{stack}"
     output_directory.mkdir(parents=True, exist_ok=False)
     remote_command(client, f"mkdir -p {remote_directory}")

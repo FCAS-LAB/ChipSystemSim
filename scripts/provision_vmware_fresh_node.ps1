@@ -2,7 +2,7 @@
 param(
     [ValidateRange(0, 15)]
     [int]$Slot = 0,
-    [string]$VmRoot = 'E:\LegoSimbricksVMs',
+    [string]$VmRoot = 'E:\ChipSystemSimVMs',
     [string]$VmwareRoot = 'E:\VMware',
     [ValidateRange(512, 8192)]
     [int]$MemoryMiB = 1536,

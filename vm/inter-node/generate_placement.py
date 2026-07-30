@@ -73,7 +73,7 @@ def main() -> None:
                 "phase": phase,
                 "process_index": process_index,
                 "node_slot": len(placement) % arguments.nodes,
-                "node_label": f"legosim.node.{len(placement) % arguments.nodes}",
+                "node_label": f"chipsystemsim.node.{len(placement) % arguments.nodes}",
             }
             coordinates = process_coordinates(process, phase, process_index)
             if coordinates is not None:

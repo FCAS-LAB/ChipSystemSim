@@ -2,7 +2,7 @@
 # tree against the already integrated LEGOSim + SimBricks runtime.  Keeping a
 # single benchmark per image makes build and runtime evidence attributable to
 # one workload, and allows a failed benchmark to leave the others testable.
-ARG BASE_IMAGE=legosim-real:8166851-simbricks-integrated
+ARG BASE_IMAGE=chipsystemsim:8166851-simbricks-integrated
 FROM ${BASE_IMAGE}
 
 ARG BENCHMARK

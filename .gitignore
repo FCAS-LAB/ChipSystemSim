@@ -13,7 +13,7 @@ __pycache__/
 *.pem
 *.key
 secrets/
-E:/LegoSimbricksVMs/
+E:/ChipSystemSimVMs/
 
 # SimBricks is an upstream dependency. Clone the pinned revision and apply the
 # repository patch described in README.md instead of committing a nested clone.

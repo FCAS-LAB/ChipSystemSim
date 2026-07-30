@@ -9,7 +9,7 @@ from pathlib import Path
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--legosim-root", type=Path, default=Path("/opt/legosim"))
-    parser.add_argument("--overlay-root", type=Path, default=Path("/opt/legosim-distributed"))
+    parser.add_argument("--overlay-root", type=Path, default=Path("/opt/chipsystemsim-distributed"))
     arguments = parser.parse_args()
     include_dir = arguments.legosim_root / "interchiplet" / "includes"
     target = include_dir / "pipe_comm.h"
