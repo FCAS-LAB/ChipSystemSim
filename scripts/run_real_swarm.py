@@ -156,6 +156,11 @@ def run_one(workload: str, node_count: int, image: str, output_root: Path, timeo
          "--topology", str(topology), "--output", str(routing)])
     run([sys.executable, str(REAL / "generate_distributed_yaml.py"), "--source-yaml", str(source_yaml),
          "--placement", str(placement), "--benchmark-root", benchmark_root,
+         # Keep every original native process in the placement graph.  In
+         # particular, stage phase-one's generated bench.txt to the worker
+         # selected for phase-two PopNet instead of silently pinning it to the
+         # manager-side coordinator.
+         "--remote-phase2",
          *(["--sniper-cores", str(sniper_cores)] if sniper_cores is not None else []),
          *(["--sniper-maxthreads", str(sniper_maxthreads)] if sniper_maxthreads is not None else []),
          "--output", str(derived_yaml),

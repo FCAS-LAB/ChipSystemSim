@@ -216,3 +216,54 @@ router 日志以尾部采集，且有界窗口可能尚未触发某些工作负�
   Docker 服务日志。
 - `third_party/simbricks/` 需要遵守其上游许可证；LEGOSim 和 benchmark 源码没有被
   复制到本仓库，构建前须在工作区中按其各自许可证提供。
+
+## MLP 固定总进程的有界通信轮次
+
+`scripts/run_mlp_scalability.py` 用于 MLP 的可恢复、逐点运行。它在每个节点数下保留同一
+逻辑进程图：phase-1 始终为 4 个 GPGPU-Sim、1 个 Sniper、1 个 DSA 和 1 个 MNSIM；
+phase-2 始终为 1 个 PopNet。节点数仅改变 placement，不增加模拟进程总数。
+
+为在资源有限的 VMware 节点上快速验证通信路径，`functional-matrix/mlp-nodes*-insn1000`
+使用上游模拟器的 GPU 指令上限与 Sniper fast-forward。它仍运行原生 LEGOSim 进程、
+PipeComm overlay、SimBricks BaseIf 和 Swarm 服务，但不是完整 MLP 自然结束的性能结果。
+
+```bash
+python3 scripts/run_mlp_scalability.py \
+  --password-file /secure/legosim-guest-password.txt \
+  --source-root results/functional-matrix \
+  --source-suffix=-insn1000 \
+  --output-root results/mlp-bounded-native \
+  --image REGISTRY/legosim-real:native-mlp-fixed-eight-stagger-v1 \
+  --nodes 1 2 4 8 --repetitions 1 \
+  --timeout-seconds 180 --expected-pipecomm-events 13
+```
+
+一个 `communication-epoch-complete` 样本要求所有 7 个 phase-1 进程都已启动，并从原生
+router 收集到指定数量的已完成 PipeComm 事件。样本在清理 Swarm stack 前会归档 coordinator
+进程日志、bridge trace 和容器内的进程/套接字快照；因此 `timeout` 可以区分 GPU 模拟计算过长
+与 PipeComm/网络故障，不能被解释为成功完成。
+
+### 镜像一致性是实验前置条件
+
+Swarm 的相同镜像 tag 不足以保证内容一致。开始一个多机点位前，应在所有参与节点校验相同
+image ID（或更严格的 registry digest）：
+
+```bash
+IMAGE=REGISTRY/legosim-real:native-mlp-fixed-eight-stagger-v1
+docker image inspect "$IMAGE" --format '{{.Id}}'
+```
+
+所有节点输出必须相同；若内网 registry 不可用，可从已验证的源节点通过 `docker save` / `docker
+load` 复制镜像后重新校验。镜像、节点内存、vCPU 数、逻辑进程数量和 placement 必须一并记录。
+
+### 解释指标
+
+- `epoch_completion_seconds`：coordinator 启动至指定有界 PipeComm 轮次完成的墙钟时间。
+- `communication_epoch_wall_seconds`：从首个 InterChiplet 命令到该轮次完成的时间；它包含
+  本地等待和跨机同步，不能单独视为网络延迟。
+- `pipe-metric.cross_node=true`：该条 PipeComm 操作跨越物理 Swarm 节点；应与读操作的
+  `synchronization_wait_ns` 一起分析。
+- `prewarm_elapsed_seconds`：transport/BaseIf 就绪的预热成本，应与轮次执行时间分开报告。
+
+短有界轮次可能由启动和跨机协调开销主导，未必随着节点数增加而加速。只有完整输入、固定资源、
+一致镜像、多次重复且应用自然结束的实验，才能据此报告总体加速比。

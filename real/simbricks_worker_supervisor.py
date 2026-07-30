@@ -130,6 +130,12 @@ def main() -> None:
             ])
             children.append(net)
 
+        # Every transport has now created its listener endpoints.  Establish
+        # connector edges in deterministic slot order instead of allowing all
+        # 28 BaseIf handshakes of an eight-node mesh to race at once.  The
+        # small stagger is applied only during startup; it does not alter the
+        # simulated workload or PipeComm timing.
+        time.sleep(arguments.slot * 2)
         for channel in local_channels:
             left = int(channel["listener_slot"])
             right = int(channel["connector_slot"])

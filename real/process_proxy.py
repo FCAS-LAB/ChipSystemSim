@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import traceback
+from pathlib import Path
 def write_json(connection: socket.socket, message: dict[str, object], lock: threading.Lock) -> None:
     """Send exactly one protocol frame without relying on a duplex makefile.
 
@@ -29,6 +30,8 @@ def main() -> None:
     parser.add_argument("--pre-copy", default="")
     parser.add_argument("--shared-asset", action="append", default=[],
                         help="file or glob copied into the worker run root before spawning")
+    parser.add_argument("--stage-file", action="append", default=[], metavar="SOURCE:DESTINATION",
+                        help="copy one coordinator-local input file into the remote child work directory")
     parser.add_argument("--gpgpu-max-completed-cta", type=int,
                         help="cap completed CTAs in the copied GPGPU-Sim configuration")
     parser.add_argument("--gpgpu-max-instructions", type=int,
@@ -36,6 +39,24 @@ def main() -> None:
     parser.add_argument("command")
     parser.add_argument("args", nargs=argparse.REMAINDER)
     arguments = parser.parse_args()
+    staged_files: list[dict[str, str]] = []
+    for specification in arguments.stage_file:
+        source_text, separator, destination_text = specification.rpartition(":")
+        if not separator or not source_text or not destination_text:
+            raise ValueError("--stage-file must have SOURCE:DESTINATION form")
+        destination = Path(destination_text)
+        # The remote worker owns a fresh per-process directory.  Restrict
+        # staging to one file in that directory; this prevents YAML input from
+        # overwriting worker programs or another process's data.
+        if destination.name != destination_text or destination_text in {".", ".."}:
+            raise ValueError("--stage-file destination must be a plain filename")
+        source = Path(source_text)
+        if not source.is_file():
+            raise FileNotFoundError(f"staged input does not exist: {source}")
+        staged_files.append({
+            "destination": destination_text,
+            "data": base64.b64encode(source.read_bytes()).decode("ascii"),
+        })
     host, port_text = arguments.worker.rsplit(":", 1)
     port = int(port_text)
     print(f"proxy: connecting process_id={arguments.process_id} worker={host}:{port}", file=sys.stderr, flush=True)
@@ -45,7 +66,11 @@ def main() -> None:
     # or bound its port, so retry a bounded number of times instead of making
     # the experiment nondeterministically fail at startup.
     connection: socket.socket | None = None
-    deadline = time.monotonic() + 60
+    # Multi-VM cold starts can initialize several BaseIf peers concurrently.
+    # Keep this comfortably above the worker supervisor's 90-second handshake
+    # allowance so a healthy worker is not discarded during startup pressure.
+    worker_ready_timeout_seconds = 180
+    deadline = time.monotonic() + worker_ready_timeout_seconds
     last_error: OSError | None = None
     while connection is None and time.monotonic() < deadline:
         try:
@@ -54,7 +79,10 @@ def main() -> None:
             last_error = error
             time.sleep(1)
     if connection is None:
-        raise RuntimeError(f"worker {arguments.worker} did not become ready within 60 seconds") from last_error
+        raise RuntimeError(
+            f"worker {arguments.worker} did not become ready within "
+            f"{worker_ready_timeout_seconds} seconds"
+        ) from last_error
 
     with connection:
         # socket.create_connection applies its timeout to the connected socket.
@@ -77,6 +105,7 @@ def main() -> None:
             "args": arguments.args,
             "pre_copy": arguments.pre_copy,
             "shared_assets": arguments.shared_asset,
+            "staged_files": staged_files,
             "gpgpu_max_completed_cta": arguments.gpgpu_max_completed_cta,
             "gpgpu_max_instructions": arguments.gpgpu_max_instructions,
             "env": child_environment,

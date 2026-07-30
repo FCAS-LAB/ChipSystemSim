@@ -1,0 +1,7 @@
+# Add deterministic BaseIf connection staggering to the already prepared
+# remote-PopNet image.  This is intentionally a one-file runtime layer.
+ARG BASE_IMAGE=192.168.244.1:5001/legosim-real:native-mlp-fixed-eight-v1
+FROM ${BASE_IMAGE}
+
+USER root
+COPY real/simbricks_worker_supervisor.py /opt/legosim-distributed/

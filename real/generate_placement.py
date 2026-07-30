@@ -3,7 +3,9 @@
 
 The generator never fabricates extra CPU/GPU simlets.  It reads the process
 counts recorded from upstream YAML files and maps each original process to a
-Swarm node label in round-robin order.  The resulting JSON is input to the
+Swarm node label in contiguous groups.  Thus an eight-process workload uses
+one process per node at eight nodes, adjacent pairs at four nodes, and two
+adjacent four-process groups at two nodes.  The resulting JSON is input to the
 distributed coordinator, not a claim that Docker Compose alone can distribute
 InterChiplet's local FIFO protocol.
 """
@@ -65,15 +67,25 @@ def main() -> None:
         workload_name = arguments.workload
         source = manifest["source"]
     source_config = yaml.safe_load(source_yaml.read_text(encoding="utf-8"))
-    placement: list[dict[str, int | str]] = []
+    source_processes: list[tuple[str, int, dict[str, object]]] = []
     for phase in ("phase1", "phase2"):
         phase_processes = source_config.get(phase, [])
         for process_index, process in enumerate(phase_processes):
+            source_processes.append((phase, process_index, process))
+    if len(source_processes) % arguments.nodes != 0:
+        raise ValueError(
+            f"{len(source_processes)} native processes cannot be evenly grouped across "
+            f"{arguments.nodes} nodes"
+        )
+    processes_per_node = len(source_processes) // arguments.nodes
+    placement: list[dict[str, int | str]] = []
+    for global_index, (phase, process_index, process) in enumerate(source_processes):
+            node_slot = global_index // processes_per_node
             record: dict[str, int | str | list[int]] = {
                 "phase": phase,
                 "process_index": process_index,
-                "node_slot": len(placement) % arguments.nodes,
-                "node_label": f"legosim.node.{len(placement) % arguments.nodes}",
+                "node_slot": node_slot,
+                "node_label": f"legosim.node.{node_slot}",
             }
             coordinates = process_coordinates(process, phase, process_index)
             if coordinates is not None:

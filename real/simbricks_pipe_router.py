@@ -25,6 +25,14 @@ class Router:
     def __init__(self, slot: int, routing: dict[str, object]) -> None:
         self.slot = slot
         self.coordinates = {key: int(value) for key, value in routing["coordinate_to_worker_slot"].items()}
+        # Logical LEGOSim partitions can be co-located for the one-machine
+        # control.  Metrics must distinguish that from a partition deployed
+        # on another physical Swarm node.
+        physical = routing.get("worker_physical_slots", {})
+        self.physical_slots = {
+            int(worker_slot): int(physical_slot)
+            for worker_slot, physical_slot in physical.items()
+        }
         base_port = int(routing.get("gateway_base_port", 9500))
         self.gateway_ports = {slot: base_port + slot for slot in set(self.coordinates.values()) if slot != self.slot}
         self.local_pipes: dict[str, deque[bytes]] = defaultdict(deque)
@@ -65,12 +73,15 @@ class Router:
                 flush=True,
             )
             operation_started_ns = time.monotonic_ns()
+            operation_started_unix_ns = time.time_ns()
             if peer == self.slot:
                 await self.handle_local(operation, pipe_name, payload, byte_count, writer)
             else:
                 normalized_header = f"{operation} {pipe_name} {byte_count}\n".encode("ascii")
                 await self.forward(peer, normalized_header, payload, reader, writer, byte_count)
-            elapsed_ns = time.monotonic_ns() - operation_started_ns
+            operation_finished_ns = time.monotonic_ns()
+            operation_finished_unix_ns = time.time_ns()
+            elapsed_ns = operation_finished_ns - operation_started_ns
             # Emit one machine-readable record per completed native PipeComm
             # operation.  A cross-slot write measures the time for this router
             # to submit its payload through the local BaseIf gateway. A read's
@@ -81,7 +92,18 @@ class Router:
                 "bytes": byte_count,
                 "source_slot": self.slot,
                 "peer_slot": peer,
-                "cross_node": peer != self.slot,
+                "cross_node": self.physical_slots.get(peer, peer)
+                != self.physical_slots.get(self.slot, self.slot),
+                # These timestamps make the blocking interval auditable within
+                # a router process. They are monotonic-clock values, so they
+                # must not be compared directly across different VMs.
+                "started_monotonic_ns": operation_started_ns,
+                "finished_monotonic_ns": operation_finished_ns,
+                # VMware guest clocks are synchronized before the scalability
+                # matrix. These wall-clock stamps let the collector form one
+                # communication-epoch makespan across router processes.
+                "started_unix_ns": operation_started_unix_ns,
+                "finished_unix_ns": operation_finished_unix_ns,
                 "elapsed_ns": elapsed_ns,
                 "synchronization_wait_ns": elapsed_ns if operation == "R" else 0,
             }, separators=(",", ":")), flush=True)

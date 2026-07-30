@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Wrap phase-1 LEGOSim executables with remote-worker process proxies."""
+"""Wrap native LEGOSim executables with remote-worker process proxies."""
 from __future__ import annotations
 
 import argparse
@@ -20,6 +20,8 @@ def main() -> None:
                         help="replace $BENCHMARK_ROOT for YAMLs copied into a container image")
     parser.add_argument("--shared-worker-asset", action="append", default=[],
                         help="file or glob copied into the worker run root before every phase-one spawn")
+    parser.add_argument("--remote-phase2", action="store_true",
+                        help="run phase-two PopNet on its placement worker and stage its generated inputs")
     parser.add_argument("--gdb-process-index", type=int,
                         help="run exactly one phase-one process under batch gdb and print all thread backtraces")
     parser.add_argument("--sniper-cores", type=int,
@@ -39,9 +41,13 @@ def main() -> None:
         raise ValueError("--gpgpu-max-instructions must be positive")
     config = yaml.safe_load(arguments.source_yaml.read_text(encoding="utf-8"))
     placement = json.loads(arguments.placement.read_text(encoding="utf-8"))
-    phase1 = {item["process_index"]: item for item in placement["processes"] if item["phase"] == "phase1"}
-    for index, process in enumerate(config["phase1"]):
-        worker = f"worker-{phase1[index]['node_slot']}:9300"
+    placements_by_phase = {
+        phase: {item["process_index"]: item for item in placement["processes"] if item["phase"] == phase}
+        for phase in ("phase1", "phase2")
+    }
+
+    def wrap_process(process: dict[str, object], phase: str, index: int) -> None:
+        worker = f"worker-{placements_by_phase[phase][index]['node_slot']}:9300"
         command = process["cmd"]
         command_arguments = list(process.get("args", []))
         pre_copy = process.get("pre_copy", "")
@@ -58,7 +64,7 @@ def main() -> None:
             if arguments.benchmark_root else asset
             for asset in arguments.shared_worker_asset
         ]
-        if arguments.gdb_process_index == index:
+        if phase == "phase1" and arguments.gdb_process_index == index:
             # Keep the proxy protocol unchanged: gdb simply becomes the remote
             # child and emits its backtrace on the child's stderr stream.
             command, command_arguments = "/usr/bin/gdb", [
@@ -66,29 +72,47 @@ def main() -> None:
                 "-ex", "run", "-ex", "thread apply all bt full", "--args",
                 command, *command_arguments,
             ]
-        elif arguments.sniper_cores is not None and command.endswith("/run-sniper"):
+        elif phase == "phase1" and arguments.sniper_cores is not None and command.endswith("/run-sniper"):
             if arguments.sniper_cores < 1:
                 raise ValueError("--sniper-cores must be positive")
             command_arguments = ["-n", str(arguments.sniper_cores), *command_arguments]
-        if arguments.sniper_fast_forward and command.endswith("/run-sniper"):
+        if phase == "phase1" and arguments.sniper_fast_forward and command.endswith("/run-sniper"):
             command_arguments = ["--fast-forward", *command_arguments]
-        if arguments.sniper_maxthreads is not None and command.endswith("/run-sniper"):
+        if phase == "phase1" and arguments.sniper_maxthreads is not None and command.endswith("/run-sniper"):
             if arguments.sniper_maxthreads < 1:
                 raise ValueError("--sniper-maxthreads must be positive")
             command_arguments = [f"--maxthreads={arguments.sniper_maxthreads}", *command_arguments]
+        staged_arguments: list[str] = []
+        if phase == "phase2":
+            # Upstream PopNet addresses phase-one output and static topology
+            # inputs as ../name from its local proc_r*_p2_t* directory.  The
+            # proxy stages those files from that coordinator directory, then
+            # rewrites each path to the remote child-local basename.
+            for argument_index, value in enumerate(command_arguments):
+                if not isinstance(value, str) or not value.startswith("../"):
+                    continue
+                # Keep the upstream Linux path spelling even when this
+                # generator itself runs on Windows.  pathlib.Path would emit
+                # ``..\\bench.txt``, which is a literal filename in a Linux
+                # coordinator container rather than a parent-directory path.
+                source = value
+                destination = source.rsplit("/", 1)[-1]
+                command_arguments[argument_index] = destination
+                staged_arguments.extend(["--stage-file", f"{source}:{destination}"])
         process["cmd"] = "python3"
         process["args"] = [
             "/opt/legosim-distributed/process_proxy.py", "--worker", worker,
-            "--process-id", f"phase1-{index}", "--pre-copy", pre_copy,
+            "--process-id", f"{phase}-{index}", "--pre-copy", pre_copy,
+            *staged_arguments,
             *[argument for asset in shared_assets for argument in ("--shared-asset", asset)],
             *(
                 ["--gpgpu-max-completed-cta", str(arguments.gpgpu_max_completed_cta)]
-                if arguments.gpgpu_max_completed_cta is not None and "gpgpu-sim" in pre_copy
+                if phase == "phase1" and arguments.gpgpu_max_completed_cta is not None and "gpgpu-sim" in pre_copy
                 else []
             ),
             *(
                 ["--gpgpu-max-instructions", str(arguments.gpgpu_max_instructions)]
-                if arguments.gpgpu_max_instructions is not None and "gpgpu-sim" in pre_copy
+                if phase == "phase1" and arguments.gpgpu_max_instructions is not None and "gpgpu-sim" in pre_copy
                 else []
             ),
             command, *command_arguments,
@@ -96,6 +120,11 @@ def main() -> None:
         process.pop("pre_copy", None)
         if arguments.stream_output:
             process["is_to_stdout"] = True
+    for index, process in enumerate(config["phase1"]):
+        wrap_process(process, "phase1", index)
+    if arguments.remote_phase2:
+        for index, process in enumerate(config.get("phase2", [])):
+            wrap_process(process, "phase2", index)
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
