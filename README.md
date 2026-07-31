@@ -240,6 +240,13 @@ router 日志以尾部采集，且有界窗口可能尚未触发某些工作负�
 - `third_party/simbricks/` 需要遵守其上游许可证；LEGOSim 和 benchmark 源码没有被
   复制到本仓库，构建前须在工作区中按其各自许可证提供。
 
+## MLP 同步数据并行（4 CPU + 8 GPU）
+
+新建的 `MLP-DP` 工作负载固定为 4 个 CPU rank 与每 rank 两个 GPU worker；1、2、4
+节点仅改变 rank 放置，不改变 128 个全局样本、100 次 SGD 更新、GPU 数或确定性规约顺序。
+它以逐元素 `abs <= 1e-6` 或 `rel <= 1e-5` 对照独立参考模型和一节点基线。构建、运行、
+资源映射与结果验收请见 [`docs/MLP_DP.md`](docs/MLP_DP.md)。
+
 ## MLP 固定总进程的有界通信轮次
 
 `scripts/run_mlp_scalability.py` 用于 MLP 的可恢复、逐点运行。它在每个节点数下保留同一

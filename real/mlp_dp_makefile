@@ -1,0 +1,21 @@
+SIMULATOR_ROOT ?= /opt/legosim
+CC := g++
+NVCC ?= nvcc
+CPU_FLAGS := -Wall -Werror -g -I$(SIMULATOR_ROOT)/interchiplet/includes
+CUDA_FLAGS := --compiler-options -Wall -I$(SIMULATOR_ROOT)/interchiplet/includes
+CPU_LIBRARY := $(SIMULATOR_ROOT)/interchiplet/lib/libinterchiplet_c.a
+
+all: bin/mlp_dp_cpu bin/mlp_dp_gpu
+
+bin:
+	mkdir -p bin
+
+bin/mlp_dp_cpu: mlp_dp_cpu.cpp | bin
+	$(CC) $(CPU_FLAGS) $< $(CPU_LIBRARY) -o $@ -lpthread
+
+bin/mlp_dp_gpu: mlp_dp_gpu.cu | bin
+	$(NVCC) $(CUDA_FLAGS) -L$(SIMULATOR_ROOT)/gpgpu-sim/lib/$(GPGPUSIM_CONFIG) \
+		-g --cudart shared $< -o $@
+
+clean:
+	rm -rf bin

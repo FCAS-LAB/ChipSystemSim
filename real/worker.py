@@ -273,6 +273,22 @@ async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, run
         read_task.cancel()
         return_code = await wait_task
         await asyncio.gather(*output_tasks)
+        # Sniper records an application's stdout in sim.out instead of its
+        # own stdout stream.  Workloads that need a machine-readable result
+        # can leave this small marker in their isolated work directory; relay
+        # it through the same output protocol used for normal child output.
+        result_marker = workdir / "mlp_dp_result.txt"
+        if result_marker.is_file():
+            marker_text = result_marker.read_text(encoding="utf-8")
+            # The coordinator may have already closed its proxy connection
+            # after the child exits. Emit the marker locally as well: the
+            # matrix runner reads transport-service logs directly.
+            print(marker_text, end="", file=sys.stderr, flush=True)
+            await send(writer, {
+                "op": "output",
+                "stream": "stdout",
+                "data": base64.b64encode(marker_text.encode("utf-8")).decode("ascii"),
+            }, lock)
         print(f"worker: process {process_id} exited rc={return_code}", file=sys.stderr, flush=True)
         await send(writer, {"op": "exit", "returncode": return_code}, lock)
     except Exception as error:
