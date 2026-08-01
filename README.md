@@ -247,6 +247,73 @@ router 日志以尾部采集，且有界窗口可能尚未触发某些工作负�
 它以逐元素 `abs <= 1e-6` 或 `rel <= 1e-5` 对照独立参考模型和一节点基线。构建、运行、
 资源映射与结果验收请见 [`docs/MLP_DP.md`](docs/MLP_DP.md)。
 
+### MLP-DP 的实现边界
+
+该工作负载是为验证**固定总任务的数据并行**而新增的、独立于上游八个 benchmark 的小型
+训练图；不要把它与前文的原生八工作负载有界功能验证混为同一组实验。它保留了
+`PipeComm -> router -> SimBricks BaseIf -> net_sockets` 的跨节点传输路径：GPU worker
+把局部梯度通过 PipeComm 发给 CPU rank，rank 0 按固定顺序规约并广播更新后的模型。
+
+当前 GPGPU-Sim 对这个 CUDA 工作负载的 kernel launch 不稳定。因此 `real/mlp_dp_gpu.cu`
+采用兼容算术路径：模型、特征与标签从 device buffer 复制到 host，由确定性的 host 代码计算
+局部梯度，再复制回 device buffer，并仍通过 GPU 端 PipeComm 发送。故这里的“8 GPU worker”
+表示八个 GPGPU-Sim/PipeComm 端点和八个数据分片，**不能**用于报告 GPU 微体系结构的算术性能。
+它验证的是梯度数据、同步顺序以及本地/跨节点 SimBricks 传输的端到端正确性。
+
+生成器可生成 1、2、4 节点配置；截至本仓库的已保存结果，只有 1 与 2 节点已实际完成并验收，
+4 节点尚未作为已验证结论报告。
+
+### 已校准的 MLP-DP 结果（2026-07-31）
+
+以下结果位于本地、被 Git 忽略的 `results/` 目录；它们不随仓库提交。每次运行均完成 100 次
+同步更新，四个 rank 的参数完全一致，并与独立 Python 参考模型的最大绝对误差为
+`1.3877787807814457e-17`。
+
+| 运行目录 | 节点数 | 墙钟时间 | 结论 |
+| --- | ---: | ---: | --- |
+| `mlp-dp-runs-20260731-v7-clean-1node` | 1 | 145.239 s | 干净的一节点正确性与时间基线 |
+| `mlp-dp-runs-20260731-v7-clean-2node` | 2 | 122.913 s | 相对上述一节点样本为 1.1816x（减少 15.37%） |
+| `mlp-dp-runs-20260731-v7-complete-metrics-2node` | 2 | 105.990 s | 完整日志采集的通信计数样本；因重跑时缓存、镜像和 VM 状态不同，不与一节点冷启动样本组成加速比 |
+
+这不是统计意义上的性能结论：每个点目前仅一个重复，且一节点与双节点的 VM 资源、预热与宿主机
+状态会影响墙钟时间。上述 1.1816x 仅证明在该受控功能运行中，双节点没有使总时长增加；若要报告
+稳定加速比，应固定每节点 vCPU/内存、镜像 digest、CPU 频率与网络条件，并以随机化顺序重复运行。
+
+完整日志的双节点样本记录了 9,216 次 PipeComm 操作，其中 800 次跨节点 router 操作；router
+双侧记账的跨节点字节数为 326,400 B。`cross_node_router_elapsed_seconds=19.937373` 与
+`cross_node_synchronization_wait_seconds=17.548076` 分别是所有并发服务/等待的**累计进程时间**，
+而非关键路径时间，不能相加后宣称为总运行时间或真实网络开销占比。运行器给出的 18.81% 和
+16.56% 只是各自累计值除以 105.990 s 的诊断比例，存在并发重叠。
+
+可按下列方式构建、生成并运行新的可复现实验；将 `REGISTRY`、manager 地址和密码文件替换为
+自己的环境。运行前，所有参与 Swarm 节点必须具有相同镜像 digest 和对应的
+`chipsystemsim.node.N=true` 标签。
+
+```bash
+cd /root/work2026
+docker build --progress=plain \
+  -t REGISTRY/chipsystemsim:mlp-dp-v1 \
+  -f ChipSystemSim/docker/Dockerfile.real-mlp-dp .
+docker push REGISTRY/chipsystemsim:mlp-dp-v1
+
+cd ChipSystemSim
+python3 scripts/generate_mlp_dp_matrix.py \
+  --output-root results/mlp-dp-config \
+  --image REGISTRY/chipsystemsim:mlp-dp-v1 --nodes 1 2
+python3 scripts/run_mlp_dp_matrix.py \
+  --manager MANAGER_IP \
+  --password-file /secure/legosim-guest-password.txt \
+  --source-root results/mlp-dp-config \
+  --output-root results/mlp-dp-runs \
+  --image REGISTRY/chipsystemsim:mlp-dp-v1 \
+  --nodes 1 2 --repetitions 3 \
+  --absolute-tolerance 1e-6 --relative-tolerance 1e-5
+```
+
+运行器会比较四个 rank、同节点数的一节点基线和独立参考实现；任何一个比较超出阈值即将该点标记为
+失败。为获得完整通信统计，应保留运行器生成的 service 全量日志和 `result.json`；只截取日志尾部时，
+跨节点 PipeComm 计数可能不完整。
+
 ## MLP 固定总进程的有界通信轮次
 
 `scripts/run_mlp_scalability.py` 用于 MLP 的可恢复、逐点运行。它在每个节点数下保留同一
