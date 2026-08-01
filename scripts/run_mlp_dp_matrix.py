@@ -18,7 +18,7 @@ RESULT = re.compile(
     r"MLP_DP_RESULT rank=(?P<rank>\d+) iterations=(?P<iterations>\d+) "
     r"parameters=(?P<parameters>\d+) values=(?P<values>[0-9eE+.,-]+)"
 )
-RANKS = 4
+RANKS = 8
 PIPE_METRIC_PREFIX = "pipe-metric: "
 
 
@@ -111,7 +111,7 @@ def upload_configuration(client: paramiko.SSHClient, source: Path, remote_direct
 
 def run_once(client: paramiko.SSHClient, source: Path, output: Path, nodes: int, repetition: int,
              image: str, timeout_seconds: int) -> dict[str, object]:
-    """Deploy one job and retain logs only after all four rank models appear."""
+    """Deploy one job and retain logs only after all eight rank models appear."""
     stack = f"chipsystemsim_mlp_dp_n{nodes}_r{repetition}"
     remote_directory = f"/home/legosim/mlp-dp/{stack}"
     output.mkdir(parents=True, exist_ok=False)
@@ -173,7 +173,7 @@ def main() -> None:
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--image", required=True)
-    parser.add_argument("--nodes", type=int, nargs="+", default=[1, 2, 4], choices=[1, 2, 4])
+    parser.add_argument("--nodes", type=int, nargs="+", default=[1, 2, 4, 8], choices=[1, 2, 4, 8])
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--timeout-seconds", type=int, default=3_600)
     parser.add_argument("--absolute-tolerance", type=float, default=1e-6)

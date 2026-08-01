@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
   if (argc != 3) return 2;
   const int rank = std::atoi(argv[1]);
   const int gpu_y = std::atoi(argv[2]);
-  if (rank < 0 || rank >= 4 || gpu_y < 1 || gpu_y > 2) return 2;
+  if (rank < 0 || rank >= 8 || gpu_y < 1 || gpu_y > 2) return 2;
   while (true) {
     WorkHeader header{};
     // GPGPU-Sim's PipeComm implementation writes received bytes to device

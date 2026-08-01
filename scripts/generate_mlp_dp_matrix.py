@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate deterministic 1/2/4-node configurations for the 4-rank MLP-DP job."""
+"""Generate deterministic 1/2/4/8-node configurations for the 8-rank MLP-DP job."""
 from __future__ import annotations
 
 import argparse
@@ -12,7 +12,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RANKS = 4
+RANKS = 8
 GPU_WORKERS_PER_RANK = 2
 
 
@@ -31,13 +31,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--image", required=True)
-    parser.add_argument("--nodes", type=int, nargs="+", default=[1, 2, 4], choices=[1, 2, 4])
+    parser.add_argument("--nodes", type=int, nargs="+", default=[1, 2, 4, 8], choices=[1, 2, 4, 8])
     arguments = parser.parse_args()
 
     source_yaml = ROOT / "real" / "mlp_dp.yml"
     source = yaml.safe_load(source_yaml.read_text(encoding="utf-8"))
     if len(source["phase1"]) != RANKS * (1 + GPU_WORKERS_PER_RANK):
-        raise RuntimeError("MLP-DP YAML must contain exactly 4 CPUs and 8 GPU workers")
+        raise RuntimeError("MLP-DP YAML must contain exactly 8 CPUs and 16 GPU workers")
 
     for nodes in arguments.nodes:
         output = arguments.output_root / f"mlp-dp-nodes{nodes}"

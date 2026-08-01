@@ -1,7 +1,7 @@
 // Deterministic synchronous data-parallel two-layer MLP CPU rank.
 //
-// Four CPU ranks and two GPU workers per rank are always present.  A rank owns
-// a stable 1/4 input shard, gathers its two GPU gradients, and rank 0 reduces
+// Eight CPU ranks and two GPU workers per rank are always present. A rank owns
+// a stable 1/8 input shard, gathers its two GPU gradients, and rank 0 reduces
 // rank gradients in ascending-rank order before broadcasting the new model.
 #include <algorithm>
 #include <array>
@@ -18,7 +18,7 @@
 #include "apis_c.h"
 
 namespace {
-constexpr int kRanks = 4;
+constexpr int kRanks = 8;
 constexpr int kGpusPerRank = 2;
 constexpr int kIterations = 100;
 constexpr int kSamples = 128;

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from math import exp
 
-RANKS = 4
+RANKS = 8
 GPUS_PER_RANK = 2
 ITERATIONS = 100
 SAMPLES = 128

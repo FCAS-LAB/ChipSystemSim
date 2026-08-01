@@ -1,4 +1,4 @@
-# Native LEGOSim image containing the deterministic 4 CPU + 8 GPU MLP-DP workload.
+# Native LEGOSim image containing the deterministic 8 CPU + 16 GPU MLP-DP workload.
 ARG BASE_IMAGE=legosim-real:native-base-functional-metrics-v1
 FROM ${BASE_IMAGE}
 
