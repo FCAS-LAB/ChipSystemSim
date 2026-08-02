@@ -1,5 +1,9 @@
-# Native LEGOSim image containing the deterministic 8 CPU + 16 GPU MLP-DP workload.
-ARG BASE_IMAGE=legosim-real:native-base-functional-metrics-v1
+# Canonical runtime image for the MLP-DP DinD scaling experiment.
+#
+# BASE_IMAGE must already contain LEGOSim, the patched SimBricks socket
+# transport, Sniper and GPGPU-Sim. The default is the validated local base tag;
+# pass --build-arg BASE_IMAGE=... when rebuilding from another compatible base.
+ARG BASE_IMAGE=chipsystemsim:native-mlp-simbricks-v30
 FROM ${BASE_IMAGE}
 
 COPY real/mlp_dp_cpu.cpp real/mlp_dp_gpu.cu real/mlp_dp_makefile real/mlp_dp.yml \
@@ -12,8 +16,7 @@ COPY real/worker.py real/process_proxy.py real/simbricks_worker_supervisor.py \
      real/simbricks_pipe_router.py /opt/chipsystemsim-distributed/
 
 RUN /bin/bash -lc 'set -euo pipefail; \
-    export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=${CUDA_INSTALL_PATH:-/usr}; \
+    export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=${CUDA_INSTALL_PATH:-/usr/local/cuda}; \
     set +u; source /opt/legosim/gpgpu-sim/setup_environment; set -u; \
-    cp -a /opt/legosim/artifact/MLP/topology /opt/legosim/artifact/MLP_DP/topology; \
-    make -C /opt/legosim/artifact/MLP_DP -f mlp_dp_makefile \
-      NVCC="nvcc -ccbin /usr/bin/g++-10"'
+    make -B -C /opt/legosim/artifact/MLP_DP -f mlp_dp_makefile \
+      NVCC="nvcc -ccbin /usr/bin/g++"'

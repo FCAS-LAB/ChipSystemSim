@@ -6,8 +6,6 @@ source and destination chiplets share that slot in memory, and forwards every
 cross-slot request to the matching single-peer C++ BaseIf gateway.  The
 gateway, not this router, owns the queue at the remote endpoint.
 """
-from __future__ import annotations
-
 import argparse
 import asyncio
 import json
@@ -15,14 +13,31 @@ import re
 import time
 from collections import defaultdict, deque
 from pathlib import Path
+from typing import Dict
 
 
 PIPE_NAME = re.compile(r"^buffer(-?\d+)_(-?\d+)_(-?\d+)_(-?\d+)$")
 MAX_REQUEST_BYTES = 65_000
 
 
+def monotonic_time_ns():
+    """Return a monotonic timestamp on both Python 3.6 and newer runtimes."""
+    monotonic_ns = getattr(time, "monotonic_ns", None)
+    if monotonic_ns is not None:
+        return monotonic_ns()
+    return int(time.monotonic() * 1_000_000_000)
+
+
+def unix_time_ns():
+    """Return a wall-clock timestamp without requiring Python 3.7's time_ns."""
+    time_ns = getattr(time, "time_ns", None)
+    if time_ns is not None:
+        return time_ns()
+    return int(time.time() * 1_000_000_000)
+
+
 class Router:
-    def __init__(self, slot: int, routing: dict[str, object]) -> None:
+    def __init__(self, slot, routing):
         self.slot = slot
         self.coordinates = {key: int(value) for key, value in routing["coordinate_to_worker_slot"].items()}
         # Logical LEGOSim partitions can be co-located for the one-machine
@@ -35,10 +50,10 @@ class Router:
         }
         base_port = int(routing.get("gateway_base_port", 9500))
         self.gateway_ports = {slot: base_port + slot for slot in set(self.coordinates.values()) if slot != self.slot}
-        self.local_pipes: dict[str, deque[bytes]] = defaultdict(deque)
+        self.local_pipes = defaultdict(deque)
         self.local_ready = asyncio.Condition()
 
-    def peer_for(self, operation: str, pipe_name: str) -> int:
+    def peer_for(self, operation, pipe_name):
         match = PIPE_NAME.fullmatch(pipe_name)
         if match is None:
             raise ValueError(f"unsupported PipeComm name: {pipe_name}")
@@ -50,7 +65,7 @@ class Router:
         except KeyError as error:
             raise ValueError(f"no worker placement for chiplet {coordinate}") from error
 
-    async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    async def handle(self, reader, writer):
         try:
             line = await reader.readline()
             fields = line.decode("ascii").rstrip("\n").split(" ")
@@ -72,15 +87,15 @@ class Router:
                 f"slot={self.slot} peer={peer}",
                 flush=True,
             )
-            operation_started_ns = time.monotonic_ns()
-            operation_started_unix_ns = time.time_ns()
+            operation_started_ns = monotonic_time_ns()
+            operation_started_unix_ns = unix_time_ns()
             if peer == self.slot:
                 await self.handle_local(operation, pipe_name, payload, byte_count, writer)
             else:
                 normalized_header = f"{operation} {pipe_name} {byte_count}\n".encode("ascii")
                 await self.forward(peer, normalized_header, payload, reader, writer, byte_count)
-            operation_finished_ns = time.monotonic_ns()
-            operation_finished_unix_ns = time.time_ns()
+            operation_finished_ns = monotonic_time_ns()
+            operation_finished_unix_ns = unix_time_ns()
             elapsed_ns = operation_finished_ns - operation_started_ns
             # Emit one machine-readable record per completed native PipeComm
             # operation.  A cross-slot write measures the time for this router
@@ -121,11 +136,8 @@ class Router:
             await writer.drain()
         finally:
             writer.close()
-            await writer.wait_closed()
 
-    async def handle_local(
-        self, operation: str, pipe_name: str, payload: bytes, byte_count: int, writer: asyncio.StreamWriter
-    ) -> None:
+    async def handle_local(self, operation, pipe_name, payload, byte_count, writer):
         async with self.local_ready:
             if operation == "W":
                 self.local_pipes[pipe_name].append(payload)
@@ -140,15 +152,7 @@ class Router:
                 writer.write(f"OK {byte_count}\n".encode("ascii") + data)
         await writer.drain()
 
-    async def forward(
-        self,
-        peer: int,
-        header: bytes,
-        payload: bytes,
-        client_reader: asyncio.StreamReader,
-        client_writer: asyncio.StreamWriter,
-        byte_count: int,
-    ) -> None:
+    async def forward(self, peer, header, payload, client_reader, client_writer, byte_count):
         del client_reader  # The request is fully read before entering this method.
         try:
             port = self.gateway_ports[peer]
@@ -169,15 +173,19 @@ class Router:
             await client_writer.drain()
         finally:
             gateway_writer.close()
-            await gateway_writer.wait_closed()
 
 
-async def main_async(arguments: argparse.Namespace) -> None:
+async def main_async(arguments):
     routing = json.loads(arguments.routing.read_text(encoding="utf-8"))
     router = Router(arguments.slot, routing)
     server = await asyncio.start_server(router.handle, "0.0.0.0", arguments.port)
-    async with server:
-        await server.serve_forever()
+    try:
+        # asyncio.Server.serve_forever() was added after Python 3.6. Keep the
+        # listener alive with an unresolved Future, which is supported by the
+        # Ubuntu 18.04 runtime shipped in the native image.
+        await asyncio.Future()
+    finally:
+        server.close()
 
 
 def main() -> None:
@@ -186,7 +194,11 @@ def main() -> None:
     parser.add_argument("--routing", required=True, type=Path)
     parser.add_argument("--port", default=9400, type=int)
     arguments = parser.parse_args()
-    asyncio.run(main_async(arguments))
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(main_async(arguments))
+    finally:
+        loop.close()
 
 
 if __name__ == "__main__":

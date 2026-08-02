@@ -1,0 +1,16 @@
+# Offline native LEGOSim base assembled from the user's local source checkout.
+ARG BASE_IMAGE=chiplet-sim:u1804
+FROM ${BASE_IMAGE}
+
+COPY upstream/LEGOSIM_MICRO/ /opt/legosim/
+COPY real/entrypoint.sh /usr/local/bin/legosim-run
+COPY real/build-native.sh /usr/local/bin/legosim-build-native
+COPY real/fifo_broker.py real/worker.py real/process_proxy.py real/remote_pipe_comm.h \
+     real/patch_gpgpusim_remote_pipe.py \
+     real/patch_pipe_comm_remote.py \
+     real/mnsim_compat.cpp real/apply_overlay.py /opt/chipsystemsim-distributed/
+
+RUN chmod +x /usr/local/bin/legosim-run /usr/local/bin/legosim-build-native && \
+    /usr/local/bin/legosim-build-native
+
+ENTRYPOINT ["/usr/local/bin/legosim-run"]

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export SIMULATOR_ROOT=/opt/legosim
-export CUDA_INSTALL_PATH="${CUDA_INSTALL_PATH:-/usr}"
+export CUDA_INSTALL_PATH="${CUDA_INSTALL_PATH:-/usr/local/cuda}"
 set +u
 source "$SIMULATOR_ROOT/gpgpu-sim/setup_environment"
 set -u

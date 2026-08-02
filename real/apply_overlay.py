@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """Install the distributed PipeComm overlay into a pristine LEGOSim checkout."""
-from __future__ import annotations
-
 import argparse
 from pathlib import Path
 

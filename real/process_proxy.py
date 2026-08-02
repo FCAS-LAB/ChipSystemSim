@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """Run as an InterChiplet child and relay one simulator to a remote worker."""
-from __future__ import annotations
-
 import argparse
 import base64
 import json
@@ -12,7 +10,10 @@ import threading
 import time
 import traceback
 from pathlib import Path
-def write_json(connection: socket.socket, message: dict[str, object], lock: threading.Lock) -> None:
+from typing import Dict, List, Optional
+
+
+def write_json(connection, message, lock):
     """Send exactly one protocol frame without relying on a duplex makefile.
 
     Python's unbuffered ``socket.makefile('rwb')`` did not reliably flush the
@@ -39,7 +40,7 @@ def main() -> None:
     parser.add_argument("command")
     parser.add_argument("args", nargs=argparse.REMAINDER)
     arguments = parser.parse_args()
-    staged_files: list[dict[str, str]] = []
+    staged_files = []  # type: List[Dict[str, str]]
     for specification in arguments.stage_file:
         source_text, separator, destination_text = specification.rpartition(":")
         if not separator or not source_text or not destination_text:
@@ -65,13 +66,19 @@ def main() -> None:
     # a phase-one process before its assigned worker has passed DNS discovery
     # or bound its port, so retry a bounded number of times instead of making
     # the experiment nondeterministically fail at startup.
-    connection: socket.socket | None = None
+    connection = None  # type: Optional[socket.socket]
     # Multi-VM cold starts can initialize several BaseIf peers concurrently.
     # Keep this comfortably above the worker supervisor's 90-second handshake
     # allowance so a healthy worker is not discarded during startup pressure.
-    worker_ready_timeout_seconds = 180
+    # An eight-node SimBricks mesh must finish all BaseIf handshakes before
+    # the worker opens port 9300.  Keep the historic value by default while
+    # allowing constrained multi-node deployments to extend this startup-only
+    # timeout without changing workload timing.
+    worker_ready_timeout_seconds = int(
+        os.environ.get("LEGOSIM_WORKER_READY_TIMEOUT_SECONDS", "180")
+    )
     deadline = time.monotonic() + worker_ready_timeout_seconds
-    last_error: OSError | None = None
+    last_error = None  # type: Optional[OSError]
     while connection is None and time.monotonic() < deadline:
         try:
             connection = socket.create_connection((host, port), timeout=5)
@@ -93,11 +100,24 @@ def main() -> None:
         stream = connection.makefile("rb")
         write_lock = threading.Lock()
         print(f"proxy: connected process_id={arguments.process_id}", file=sys.stderr, flush=True)
-        child_environment: dict[str, str] = {"SIMULATOR_ROOT": "/opt/legosim"}
+        child_environment = {"SIMULATOR_ROOT": "/opt/legosim"}  # type: Dict[str, str]
         for endpoint_variable in ("LEGOSIM_FIFO_BROKER", "LEGOSIM_PIPE_GATEWAY"):
             endpoint = os.environ.get(endpoint_variable)
             if endpoint:
                 child_environment[endpoint_variable] = endpoint
+        # The functional-fast MNSIM mode changes only the spatial evaluation
+        # size.  Forward it explicitly because worker children intentionally
+        # receive a minimal environment rather than inheriting the supervisor.
+        fast_input_size = os.environ.get("LEGOSIM_MNSIM_FAST_INPUT_SIZE")
+        if fast_input_size:
+            child_environment["LEGOSIM_MNSIM_FAST_INPUT_SIZE"] = fast_input_size
+        # Keep the global MLP-DP batch fixed while its rank count changes with
+        # the Swarm size. Worker children deliberately receive only this
+        # explicit environment subset.
+        for name in ("LEGOSIM_MLP_DP_RANKS", "LEGOSIM_MLP_DP_SAMPLES"):
+            value = os.environ.get(name)
+            if value:
+                child_environment[name] = value
         write_json(connection, {
             "op": "spawn",
             "process_id": arguments.process_id,

@@ -8,8 +8,6 @@ termination protocol and must remain the default.  For a focused diagnostic,
 known number of completed requests.  The patch also releases per-request host
 and device allocations that the original loop retained until process exit.
 """
-from __future__ import annotations
-
 from pathlib import Path
 
 

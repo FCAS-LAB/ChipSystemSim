@@ -1,0 +1,47 @@
+# Original LEGOSim MLP process graph plus the v20 SimBricks PipeComm transport.
+#
+# The MLP-DP base supplies the complete LEGOSim runtime, CUDA toolchain, Sniper,
+# GPGPU-Sim and original artifact/MLP sources.  This image rebuilds only the
+# original MLP executables; it does not replace them with the MLP-DP workload.
+ARG BASE_IMAGE=chipsystemsim:mlp-dp-8ranks-v12-iterable
+FROM ${BASE_IMAGE}
+
+COPY third_party/simbricks /opt/simbricks
+# MLP includes <nlohmann/json.hpp>, while its upstream makefile omits a local
+# include path and Ubuntu 18.04 has no nlohmann-json3-dev package.  Preserve
+# the upstream single-header dependency in the standard compiler include path.
+COPY third_party/nlohmann-json.hpp /usr/local/include/nlohmann/json.hpp
+COPY third_party/MNSIMChiplet /opt/legosim/MNSIMChiplet
+COPY third_party/tasks-vgg13 /opt/legosim/tasks-vgg13
+COPY real/simbricks_pipe_gateway.cc real/simbricks_pipe_protocol.h \
+     real/process_proxy.py real/simbricks_worker_supervisor.py \
+     real/patch_mlp_bounded_iterations.py real/patch_mlp_mnsim_runtime.py \
+     /opt/chipsystemsim-distributed/
+
+# Rebuild socket transport in the container to avoid host-GLIBC leakage, then
+# rebuild the upstream MLP CUDA/CPU/DSA/MNSIM artifacts.  The bounded-loop patch
+# keeps upstream sentinel termination as the default; it only acts when the
+# optional LEGOSIM_MLP_MAX_ITERATIONS environment variable is set.
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      libelf-dev && rm -rf /var/lib/apt/lists/* && \
+    /usr/bin/python3 -m pip install --no-cache-dir \
+      -i https://pypi.tuna.tsinghua.edu.cn/simple torch==1.10.1 torchvision==0.11.2 && \
+    make -B -C /opt/simbricks dist/sockets/net_sockets && \
+    gcc -O2 -Wall -Wextra -Werror -Wno-error=unused-parameter -std=c11 \
+      -I/opt/simbricks -I/opt/simbricks/lib -c /opt/simbricks/lib/simbricks/base/if.c \
+      -o /tmp/simbricks-base-if.o && \
+    g++ -O2 -Wall -Wextra -Werror -Wno-error=unused-parameter -std=c++17 -pthread \
+      -I/opt/simbricks -I/opt/simbricks/lib -I/opt/chipsystemsim-distributed \
+      /opt/chipsystemsim-distributed/simbricks_pipe_gateway.cc \
+      /tmp/simbricks-base-if.o -o /usr/local/bin/simbricks-pipe-gateway && \
+    /bin/bash -lc 'set -euo pipefail; \
+      export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=${CUDA_INSTALL_PATH:-/usr/local/cuda}; \
+      # This upstream script probes optional remote-GPU variables.  Source it
+      # with nounset temporarily disabled, then restore the strict shell mode.
+      set +u; source /opt/legosim/gpgpu-sim/setup_environment; set -u; \
+      # setup_environment changes PATH; use Ubuntu's Python 3 explicitly so
+      # the patch is not accidentally executed by the legacy bundled Python.
+      /usr/bin/python3 /opt/chipsystemsim-distributed/patch_mlp_bounded_iterations.py; \
+      /usr/bin/python3 /opt/chipsystemsim-distributed/patch_mlp_mnsim_runtime.py; \
+      make -C /opt/legosim/artifact/MLP clean_all; \
+      make -C /opt/legosim/artifact/MLP NVCC="nvcc -ccbin /usr/bin/g++"'

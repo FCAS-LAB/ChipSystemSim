@@ -7,8 +7,6 @@ coordinator responses to the simulator's stdin.  This preserves the existing
 InterChiplet command protocol while moving process placement out of the
 coordinator container.
 """
-from __future__ import annotations
-
 import argparse
 import asyncio
 import base64
@@ -20,7 +18,7 @@ import socket
 import time
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 
 # Concurrent phase-one connections can request the same immutable input asset.
@@ -29,9 +27,7 @@ from typing import Any
 SHARED_ASSET_LOCK = asyncio.Lock()
 
 
-def set_gpgpu_test_limits(
-    workdir: Path, maximum_completed_cta: int | None, maximum_instructions: int | None
-) -> None:
+def set_gpgpu_test_limits(workdir, maximum_completed_cta, maximum_instructions):
     """Apply functional-test limits to a copied upstream GPGPU-Sim config.
 
     The original configuration uses zero to mean unlimited. This helper is
@@ -66,23 +62,24 @@ def set_gpgpu_test_limits(
     configuration.write_text(updated, encoding="utf-8")
 
 
-async def send(writer: asyncio.StreamWriter, message: dict[str, Any], lock: asyncio.Lock) -> None:
+async def send(writer, message, lock):
     async with lock:
         writer.write((json.dumps(message, separators=(",", ":")) + "\n").encode("utf-8"))
         await writer.drain()
 
 
-async def forward_stream(
-    stream: asyncio.StreamReader, stream_name: str, writer: asyncio.StreamWriter, lock: asyncio.Lock
-) -> None:
-    while chunk := await stream.read(4096):
+async def forward_stream(stream, stream_name, writer, lock):
+    while True:
+        chunk = await stream.read(4096)
+        if not chunk:
+            break
         await send(writer, {"op": "output", "stream": stream_name,
                             "data": base64.b64encode(chunk).decode("ascii")}, lock)
 
 
-async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, run_root: Path) -> None:
+async def handle(reader, writer, run_root):
     lock = asyncio.Lock()
-    process: asyncio.subprocess.Process | None = None
+    process = None  # type: Optional[asyncio.subprocess.Process]
     try:
         peer = writer.get_extra_info("peername")
         print(f"worker: accepted connection peer={peer}", file=sys.stderr, flush=True)
@@ -239,17 +236,17 @@ async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, run
         print(f"worker: spawned {process_id} pid={process.pid} cwd={workdir}", file=sys.stderr, flush=True)
         await send(writer, {"op": "started", "pid": process.pid}, lock)
         output_tasks = [
-            asyncio.create_task(forward_stream(process.stdout, "stdout", writer, lock)),
-            asyncio.create_task(forward_stream(process.stderr, "stderr", writer, lock)),
+            asyncio.ensure_future(forward_stream(process.stdout, "stdout", writer, lock)),
+            asyncio.ensure_future(forward_stream(process.stderr, "stderr", writer, lock)),
         ]
-        wait_task = asyncio.create_task(process.wait())
-        read_task = asyncio.create_task(reader.readline())
+        wait_task = asyncio.ensure_future(process.wait())
+        read_task = asyncio.ensure_future(reader.readline())
         while not wait_task.done():
             done, _ = await asyncio.wait((wait_task, read_task), return_when=asyncio.FIRST_COMPLETED)
             if wait_task in done:
                 break
             raw = read_task.result()
-            read_task = asyncio.create_task(reader.readline())
+            read_task = asyncio.ensure_future(reader.readline())
             if not raw:
                 if not wait_task.done():
                     try:
@@ -299,15 +296,18 @@ async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, run
         await send(writer, {"op": "error", "error": str(error)}, lock)
     finally:
         writer.close()
-        await writer.wait_closed()
 
 
-async def main_async(port: int, run_root: Path) -> None:
+async def main_async(port, run_root):
     run_root.mkdir(parents=True, exist_ok=True)
     server = await asyncio.start_server(lambda reader, writer: handle(reader, writer, run_root), "0.0.0.0", port)
     print(f"worker: ready port={port}", flush=True)
-    async with server:
-        await server.serve_forever()
+    try:
+        # Python 3.6 lacks asyncio.Server.serve_forever(). The unresolved
+        # Future keeps this worker listener active until its supervisor exits.
+        await asyncio.Future()
+    finally:
+        server.close()
 
 
 def main() -> None:
@@ -315,7 +315,11 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=9300)
     parser.add_argument("--run-root", type=Path, default=Path("/run/legosim"))
     arguments = parser.parse_args()
-    asyncio.run(main_async(arguments.port, arguments.run_root))
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(main_async(arguments.port, arguments.run_root))
+    finally:
+        loop.close()
 
 
 if __name__ == "__main__":
