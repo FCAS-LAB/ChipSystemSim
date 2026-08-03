@@ -114,7 +114,7 @@ class Router:
                 # must not be compared directly across different VMs.
                 "started_monotonic_ns": operation_started_ns,
                 "finished_monotonic_ns": operation_finished_ns,
-                # VMware guest clocks are synchronized before the scalability
+                # Logical-node clocks are synchronized before the scalability
                 # matrix. These wall-clock stamps let the collector form one
                 # communication-epoch makespan across router processes.
                 "started_unix_ns": operation_started_unix_ns,

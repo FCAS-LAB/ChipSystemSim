@@ -71,8 +71,40 @@ def local_gradient(model: list[float], samples: list[tuple[list[float], int]]) -
     return gradient
 
 
-def reference_model() -> list[float]:
-    """Run the fixed 100-step rank-ordered synchronous SGD reference."""
+def rank_ordered_reduce(rank_gradients: list[list[float]]) -> list[float]:
+    """Reduce rank gradients in the former serial rank-0 order."""
+    total = list(rank_gradients[0])
+    for rank in range(1, RANKS):
+        total = [total[index] + rank_gradients[rank][index] for index in range(PARAMETERS)]
+    return total
+
+
+def binary_tree_reduce(rank_gradients: list[list[float]]) -> list[float]:
+    """Match the deterministic contiguous-subtree reduction in mlp_dp_cpu.cpp."""
+    partial = [list(gradient) for gradient in rank_gradients]
+    stride = 1
+    while stride < RANKS:
+        for parent in range(0, RANKS, 2 * stride):
+            child = parent + stride
+            partial[parent] = [
+                partial[parent][index] + partial[child][index]
+                for index in range(PARAMETERS)
+            ]
+        stride *= 2
+    return partial[0]
+
+
+def reference_model(reduction: str = "rank_ordered") -> list[float]:
+    """Run synchronous SGD with either serial or tree gradient reduction."""
+    reducers = {
+        "rank_ordered": rank_ordered_reduce,
+        "binary_tree": binary_tree_reduce,
+    }
+    try:
+        reduce_gradients = reducers[reduction]
+    except KeyError as error:
+        raise ValueError(f"unsupported reduction: {reduction}") from error
+
     model = [0.01 * (index % 7 - 3) for index in range(PARAMETERS)]
     for _ in range(ITERATIONS):
         rank_gradients: list[list[float]] = []
@@ -80,9 +112,14 @@ def reference_model() -> list[float]:
             left = local_gradient(model, shard(rank, 0))
             right = local_gradient(model, shard(rank, 1))
             rank_gradients.append([left[index] + right[index] for index in range(PARAMETERS)])
-        total = list(rank_gradients[0])
-        for rank in range(1, RANKS):
-            total = [total[index] + rank_gradients[rank][index] for index in range(PARAMETERS)]
+        total = reduce_gradients(rank_gradients)
         model = [model[index] - LEARNING_RATE * total[index] / SAMPLES
                  for index in range(PARAMETERS)]
     return model
+
+
+if __name__ == "__main__":
+    serial_model = reference_model("rank_ordered")
+    tree_model = reference_model("binary_tree")
+    maximum_error = max(abs(left - right) for left, right in zip(serial_model, tree_model))
+    print(f"maximum_absolute_difference={maximum_error:.17g}")

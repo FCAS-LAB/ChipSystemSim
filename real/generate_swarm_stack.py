@@ -34,9 +34,11 @@ def main() -> None:
                         help="use a smaller MNSIM input feature map for labelled functional/communication validation")
     parser.add_argument("--worker-ready-timeout", type=int, default=180,
                         help="seconds the coordinator may wait for transport worker port 9300")
-    parser.add_argument("--baseif-ready-timeout", type=int, default=90,
+    # Eight distributed BaseIf endpoints can need longer than the small-stack
+    # default to complete their all-to-all socket introductions under DinD.
+    parser.add_argument("--baseif-ready-timeout", type=int, default=300,
                         help="seconds a transport may wait for all BaseIf links")
-    parser.add_argument("--baseif-connect-timeout", type=int, default=60,
+    parser.add_argument("--baseif-connect-timeout", type=int, default=180,
                         help="seconds a connector may retry its remote BaseIf listener")
     arguments = parser.parse_args()
     placement = json.loads(arguments.placement.read_text(encoding="utf-8"))
@@ -64,7 +66,10 @@ def main() -> None:
     # The CUDA-enabled base image installs nvcc below /usr/local/cuda. Do not
     # fall back to /usr: that location works for one distro package layout but
     # fails inside the Ubuntu 18.04 runtime image used by DinD workers.
-    environment_prefix = "export CUDA_INSTALL_PATH=${CUDA_INSTALL_PATH:-/usr/local/cuda}; source /opt/legosim/gpgpu-sim/setup_environment && exec "
+    # The container provides CUDA headers/libraries through the distribution
+    # path.  Do not default to /usr/local/cuda: that path is absent in the
+    # minimal runtime image and GPGPU-Sim rejects it before serving requests.
+    environment_prefix = "export CUDA_INSTALL_PATH=${CUDA_INSTALL_PATH:-/usr}; source /opt/legosim/gpgpu-sim/setup_environment && exec "
     services: dict[str, object] = {
         "coordinator": {
             "image": arguments.image,

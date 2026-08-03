@@ -15,6 +15,8 @@ delay="1ms"
 rate="none"
 image_load_jobs=1
 dind_image="docker:27-dind"
+dind_data_root=""
+image_archive_source=""
 prefix="chipsystemsim-dind"
 cleanup=false
 
@@ -29,6 +31,8 @@ Options:
   --rate RATE|none     Optional netem link-rate cap (default: none).
   --image-load-jobs N  Concurrent nested image imports (default: 1).
   --dind-image IMAGE   DinD image, useful with an internal registry/mirror.
+  --dind-data-root DIR Store each nested Docker data root below DIR.
+  --image-archive FILE Reuse a pre-exported outer image archive for nested loads.
   --prefix NAME        Container-name prefix (default: chipsystemsim-dind).
   --cleanup            Remove a previously created DinD experiment for --prefix.
 EOF
@@ -44,6 +48,8 @@ while (($#)); do
     --rate) rate="$2"; shift 2 ;;
     --image-load-jobs) image_load_jobs="$2"; shift 2 ;;
     --dind-image) dind_image="$2"; shift 2 ;;
+    --dind-data-root) dind_data_root="$2"; shift 2 ;;
+    --image-archive) image_archive_source="$2"; shift 2 ;;
     --prefix) prefix="$2"; shift 2 ;;
     --cleanup) cleanup=true; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -53,6 +59,18 @@ done
 
 [[ "$nodes" =~ ^(1|2|4|8)$ ]] || { echo "--nodes must be 1, 2, 4, or 8" >&2; exit 2; }
 [[ "$image_load_jobs" =~ ^[1-9][0-9]*$ ]] || { echo "--image-load-jobs must be a positive integer" >&2; exit 2; }
+if [[ -n "$dind_data_root" ]]; then
+  [[ "$dind_data_root" == /* && "$dind_data_root" != "/" ]] || {
+    echo "--dind-data-root must be a non-root absolute path" >&2
+    exit 2
+  }
+fi
+if [[ -n "$image_archive_source" ]]; then
+  [[ -f "$image_archive_source" && -r "$image_archive_source" ]] || {
+    echo "--image-archive must name a readable regular file" >&2
+    exit 2
+  }
+fi
 if ! $cleanup; then
   [[ -n "$image" ]] || { echo "--image is required" >&2; exit 2; }
   docker image inspect "$image" >/dev/null
@@ -83,6 +101,15 @@ done
 remove_experiment() {
   docker ps -aq --filter "name=^/${prefix}-" | xargs -r docker rm -f >/dev/null
   docker network rm "$network" >/dev/null 2>&1 || true
+  # This directory is dedicated to this exact prefix.  It only contains
+  # nested Docker layers that become unreachable when the DinD nodes go away.
+  # DinD writes them as root, so clean through a short-lived root container
+  # rather than relying on the outer host user's filesystem permissions.
+  if [[ -n "$dind_data_root" && -e "$dind_data_root" ]]; then
+    docker run --rm --mount "type=bind,src=${dind_data_root},dst=/dind-data" \
+      --entrypoint /bin/sh "$dind_image" -c 'rm -rf /dind-data/* 2>/dev/null || true'
+    rmdir "$dind_data_root" 2>/dev/null || true
+  fi
 }
 
 if $cleanup; then
@@ -91,6 +118,7 @@ if $cleanup; then
 fi
 
 remove_experiment
+[[ -z "$dind_data_root" ]] || mkdir -p "$dind_data_root"
 docker network create --driver bridge --subnet "$subnet" "$network" >/dev/null
 
 # Docker accepts fractional CPU quotas. All requested points divide 8 exactly.
@@ -121,38 +149,36 @@ wait_docker() {
   return 1
 }
 
-install_tc() {
+configure_netem() {
   local container="$1"
-  # The public Alpine mirror occasionally rejects one index request. DinD
-  # nodes are disposable, so retry only this bootstrap dependency a bounded
-  # number of times instead of weakening the experiment or continuing without
-  # the requested netem impairment.
-  for _ in $(seq 1 8); do
-    if docker exec "$container" sh -ec \
-        "apk add --no-cache iproute2-tc >/dev/null 2>&1 || apk add --no-cache iproute2 >/dev/null 2>&1"; then
-      return 0
-    fi
-    sleep 3
-  done
-  echo "could not install tc in DinD node: $container" >&2
-  return 1
-}
-
-for slot in $(seq 0 $((nodes - 1))); do
-  container="${prefix}-${slot}"
-  address="${address_prefix}.$((10 + slot))"
-  docker run -d --privileged --name "$container" --hostname "$container" \
-    --network "$network" --ip "$address" --cpus "$per_node_cpus" --memory "$per_node_memory" \
-    "$dind_image" --tls=false >/dev/null
-  wait_docker "$container"
-  # tc is absent from the minimal DinD image. It is installed inside the
-  # disposable node, not on the host, and applies only to outbound overlay traffic.
-  install_tc "$container"
+  # docker:dind intentionally omits tc. Install the small Alpine package only
+  # when needed; this avoids imposing a tc binary requirement on the LEGOSim
+  # simulation image and keeps the qdisc in the DinD node namespace.
+  if ! docker exec "$container" tc qdisc show dev eth0 >/dev/null 2>&1; then
+    docker exec "$container" apk add --no-cache iproute2 >/dev/null
+  fi
   if [[ "$rate" == "none" ]]; then
     docker exec "$container" tc qdisc replace dev eth0 root netem delay "$delay"
   else
     docker exec "$container" tc qdisc replace dev eth0 root netem delay "$delay" rate "$rate"
   fi
+}
+
+for slot in $(seq 0 $((nodes - 1))); do
+  container="${prefix}-${slot}"
+  address="${address_prefix}.$((10 + slot))"
+  data_mount=()
+  if [[ -n "$dind_data_root" ]]; then
+    node_data_root="${dind_data_root}/${container}"
+    mkdir -p "$node_data_root"
+    data_mount=(--mount "type=bind,src=${node_data_root},dst=/var/lib/docker")
+  fi
+  docker run -d --privileged --name "$container" --hostname "$container" \
+    --network "$network" --ip "$address" --dns 8.8.8.8 --cpus "$per_node_cpus" --memory "$per_node_memory" \
+    "${data_mount[@]}" \
+    "$dind_image" --tls=false >/dev/null
+  wait_docker "$container"
+  configure_netem "$container"
 done
 
 manager="${prefix}-0"
@@ -178,9 +204,17 @@ done
 # pulls while allowing large 4/8-node experiments to use the available host
 # I/O parallelism. The default remains sequential for reproducibility on small
 # hosts.
-image_archive=$(mktemp -t "${prefix}-image.XXXXXX.tar")
-trap 'rm -f "$image_archive"' EXIT
-docker save --output "$image_archive" "$image"
+if [[ -n "$image_archive_source" ]]; then
+  # Exporting a large image while many DinD daemons are starting can put heavy
+  # pressure on the outer Docker storage driver. Reusing an archive produced
+  # before provisioning keeps that I/O outside the timed experiment and makes
+  # the preparation path deterministic on hosts with a small root partition.
+  image_archive="$image_archive_source"
+else
+  image_archive=$(mktemp -t "${prefix}-image.XXXXXX.tar")
+  trap 'rm -f "$image_archive"' EXIT
+  docker save --output "$image_archive" "$image"
+fi
 
 load_pids=()
 for slot in $(seq 0 $((nodes - 1))); do

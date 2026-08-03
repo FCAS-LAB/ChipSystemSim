@@ -4,6 +4,7 @@
 
 | 文件 | 用途 |
 | --- | --- |
+| `Dockerfile.dind-netem` | 当前 DinD 逻辑节点镜像；在 `docker:27-dind` 上安装 `tc/netem` 所需的 `iproute2`。 |
 | `Dockerfile.real-mlp-dp` | 当前 DinD MLP-DP scale-out 实验的运行镜像。以一个已构建 LEGOSim/SimBricks 基础镜像为输入，重新编译 MLP-DP 并复制运行时 Python 组件。 |
 | `Dockerfile.real-local-source` | 从本地已授权的 LEGOSim 源码组装离线基础镜像。需要在构建上下文提供 `upstream/LEGOSIM_MICRO/`。 |
 | `Dockerfile.real-native-mlp-simbricks` | 原始 LEGOSim MLP 进程图的兼容构建路径；用于原始 MLP 功能研究，不是 MLP-DP 的默认入口。 |
@@ -12,10 +13,16 @@
 ## 构建当前 MLP-DP 镜像
 
 ```bash
+docker build -t chipsystemsim:dind-netem -f docker/Dockerfile.dind-netem .
+
 docker build -t chipsystemsim:mlp-dp-current \
   --build-arg BASE_IMAGE=chipsystemsim:native-mlp-simbricks-v30 \
   -f docker/Dockerfile.real-mlp-dp .
 ```
+
+运行矩阵时应将上例的 runtime tag 传给
+`scripts/run_dind_mlp_dp_per_node_scaleout.sh --image ...`。该脚本为每个逻辑节点固定
+8 vCPU、16 GiB、1 CPU rank 和 2 GPU worker。
 
 `BASE_IMAGE` 必须包含相同 ABI 的 LEGOSim、GPGPU-Sim、Sniper、SimBricks socket
 transport 和 `simbricks-pipe-gateway`。它不是公开通用基础镜像；在另一台机器上应先按

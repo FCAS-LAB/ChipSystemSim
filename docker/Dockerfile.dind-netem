@@ -1,0 +1,6 @@
+# DinD runtime used by the reproducible 1 ms network-delay experiment.
+# docker:27-dind is Alpine-based and intentionally omits tc; install it once
+# in the immutable image instead of downloading it while each logical node
+# starts.
+FROM docker:27-dind
+RUN apk add --no-cache iproute2

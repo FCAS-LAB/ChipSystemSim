@@ -1,83 +1,96 @@
-# ChipSystemSim：基于 SimBricks BaseIf 的 LEGOSim 分布式运行时
+# ChipSystemSim：LEGOSim PipeComm over SimBricks BaseIf
 
-ChipSystemSim 将 LEGOSim phase-1 进程间的 `PipeComm` 通信扩展到 Docker
-Swarm 的不同节点：同节点 pipe 由本地 router 排队，跨节点 pipe 经过
-`simbricks-pipe-gateway`、SimBricks `BaseIf` 与 `dist/sockets/net_sockets` 送达
-目标节点。它用于验证真实 LEGOSim 进程图在受控多节点环境中的启动、通信、放置和同步。
+本项目在开源 **LEGOSim** 和 **SimBricks** 的基础上，将 LEGOSim phase-1 进程的
+`PipeComm` 跨节点消息接入 SimBricks `BaseIf`/`net_sockets`，并以单机 DinD +
+Docker Swarm 部署可复现的多逻辑节点 MLP 数据并行实验。
 
-## 重要边界
+## 这是什么，以及不是什么
 
-本项目**不是**把 LEGOSim CPU/GPU 映射为 SimBricks 的 PCIe、NIC、交换机或 ns-3
-设备模型。SimBricks 在这里是跨节点 `PipeComm` 的 BaseIf 传输层；LEGOSim 的 Sniper、
-GPGPU-Sim、MNSIM 与 DSA 仍是原进程图中的模拟器。因而它与 SimBricks+gem5 的完整硬件
-接口集成不同，结果应表述为“LEGOSim PipeComm over SimBricks BaseIf”。
+同一逻辑节点内的 `PipeComm` 由本地 router 排队；跨节点消息经
+`simbricks-pipe-gateway`、SimBricks `BaseIf` 和 socket transport 到达目标节点。
+LEGOSim 的 Sniper、GPGPU-Sim、MNSIM 与 DSA 仍按原进程图运行。
 
-`MLP-DP` 是额外提供的确定性数据并行工作负载，用来研究一个共同任务的扩展行为；它不等同于
-上游原始 MLP benchmark。其 GPU 梯度算术使用 GPGPU-Sim 兼容 host 路径，仍经 GPU
-PipeComm 端点传输梯度。因此可报告端到端通信、同步与计算关键路径，但不能将其解释成 GPU
-微体系结构周期性能。
+这**不是**把 LEGOSim CPU/GPU 映射为 SimBricks PCIe、NIC、交换机或 ns-3 设备模型。
+因此应称为 **LEGOSim PipeComm over SimBricks BaseIf**：SimBricks 在此承担跨节点通信
+传输层，不是完整硬件接口级联仿真。
 
-## 当前推荐实验：单机 DinD MLP-DP
+`MLP-DP` 是项目提供的确定性数据并行工作负载，用于验证同一 MLP 任务的多节点划分、通信
+和同步。GPU 端保留 GPGPU-Sim/PipeComm 端点；局部梯度算术走兼容 host 路径，因而结果不能
+解释为 GPU 微体系结构周期性能。
 
-推荐在一台 Linux 服务器中以 DinD 创建 1、2、4、8 个独立 Docker daemon，并在内部
-Swarm 中运行同一个 MLP-DP 任务。正式 scale-out 配置为：
+## 推荐复现：固定每节点资源的 DinD 矩阵
 
-- 每节点 4 vCPU、16 GiB 内存、1 个 CPU data rank、2 个 GPU worker；
-- 全局 batch 固定为 32,768，训练迭代固定为 40；
-- 节点数改变 data-parallel 分片数，因此总 CPU/GPU worker 数随节点数增加；
-- 多节点使用纯 `netem delay 1ms`，不附加未声明的带宽限速；
-- 1、2、4 节点可并行运行；8 节点应在前者结束并关闭其 DinD 后单独运行。
+当前推荐入口是
+[`scripts/run_dind_mlp_dp_per_node_scaleout.sh`](scripts/run_dind_mlp_dp_per_node_scaleout.sh)。
+它顺序运行 1、2、4、8 个 DinD Swarm 节点，并在每个点完成后清理该点创建的容器和内层镜像
+存储。
 
-完整构建、运行、清理、成功判据和指标定义见
-[docs/DIND_MLP_DP.md](docs/DIND_MLP_DP.md)。
+| 项目 | 固定值 |
+| --- | --- |
+| 每个逻辑节点 | 8 vCPU、16 GiB、1 CPU rank、2 GPU worker |
+| 节点数 | 1、2、4、8 |
+| 总 CPU rank / GPU worker | 1/2、2/4、4/8、8/16 |
+| 全局任务 | 同一 MLP-DP，32,768 全局样本、3 次迭代 |
+| 跨节点网络 | `netem delay 1ms`，不注入带宽限制 |
+| 放置 | 每个 rank 的 CPU 与两个 GPU worker 静态同置 |
 
-## 已实现的运行时改动
+因此，总 Docker CPU/内存随节点数线性增加，但**每节点**资源不变；全局样本数固定，由更多
+rank group 数据并行划分。该实验考察增加节点与 rank group 后的端到端关键路径，而不是“只把
+固定数量 rank 切到更多节点”的固定总资源对照。
 
-1. `real/simbricks_pipe_router.py`：本地队列和跨 worker BaseIf 转发，并为每次
-   PipeComm 记录机器可读指标。
-2. `real/simbricks_pipe_gateway.cc`：将 router 请求转换为 SimBricks BaseIf 通道；
-   `net_sockets` 负责跨 Swarm 节点 TCP 连接。
-3. `real/simbricks_worker_supervisor.py` 与 `real/process_proxy.py`：处理 Swarm DNS、
-   listener/connector 启动顺序、BaseIf 就绪重试，以及 coordinator 到远端 phase-1
-   进程的标准输入/输出转发。
-4. `scripts/generate_mlp_dp_matrix.py`：以固定全局 batch 生成 1/2/4/8 节点配置，并把
-   同一 rank 的 CPU 与两个 GPU worker 放在同一逻辑节点。
-5. `scripts/run_dind_mlp_dp.sh`：只在 transport 全部就绪后启动 coordinator，收集自然
-   完成证据、通信指标，以及跨节点读等待的墙钟并集时间。
+完整前置条件、构建、运行、成功判据和指标定义见
+[docs/DIND_MLP_DP.md](docs/DIND_MLP_DP.md)。最新已验证结果见
+[docs/RESULTS_MLP_DP_PER_NODE_8VCPU.md](docs/RESULTS_MLP_DP_PER_NODE_8VCPU.md)。
 
-## 目录与入口
+## 快速开始
 
-- `real/`：LEGOSim/SimBricks 分布式运行时、router、gateway、配置生成器和 MLP-DP 源码。
-- `docker/`：镜像入口说明见 [docker/README.md](docker/README.md)；新的 MLP-DP
-  实验使用 `Dockerfile.real-mlp-dp`。
-- `scripts/`：DinD provisioning、运行器与结果汇总脚本。
-- `docs/`：方法、指标与限制说明。
-- `vm/`：原先 VMware 多机部署的节点内/节点间代码快照。
-- `platform/`：早期 Python/JSON-TCP 合成适配器，仅作历史对照，不能作为原生结果。
-
-## 构建前置条件
-
-- Linux x86-64、Docker Engine 27+、当前用户可访问 Docker socket。
-- 一个兼容基础镜像：其中必须已包含 LEGOSim、Sniper、GPGPU-Sim、已构建的 SimBricks
-  socket transport 和 `simbricks-pipe-gateway`。已验证环境使用
-  `chipsystemsim:native-mlp-simbricks-v30`。
-- 从源码构建基础层时，按各自许可证准备 LEGOSim、SimBricks 与 benchmark 源码；本仓库不
-  重新发布这些上游项目。SimBricks 使用固定 revision 并应用
-  `patches/simbricks/0001-legosim-low-rate-baseif.patch`。
-
-构建当前 MLP-DP 运行镜像：
+在 Linux x86-64 Docker 主机上执行。运行完整 8 节点矩阵至少需要 64 个可用逻辑 CPU、128 GiB
+可用内存，以及容纳一份运行镜像和每点临时 DinD 存储的磁盘空间。
 
 ```bash
-docker build -t chipsystemsim:mlp-dp-current \
+git clone git@github.com:LeenSed/ChipSystemSim.git
+cd ChipSystemSim
+
+# DinD 节点需要 tc/netem。
+docker build -t chipsystemsim:dind-netem -f docker/Dockerfile.dind-netem .
+
+# BASE_IMAGE 必须是本机已有、ABI 兼容的 LEGOSim + SimBricks 基础镜像。
+docker build -t chipsystemsim:mlp-dp-steady-v2 \
   --build-arg BASE_IMAGE=chipsystemsim:native-mlp-simbricks-v30 \
   -f docker/Dockerfile.real-mlp-dp .
+
+scripts/run_dind_mlp_dp_per_node_scaleout.sh \
+  --image chipsystemsim:mlp-dp-steady-v2 \
+  --output-root /mnt/large-disk/chipsystemsim-results/mlp-dp-$(date +%Y%m%d-%H%M%S)
 ```
 
-不要提交 Docker image tar、DinD 数据目录、VM 磁盘、密码、私钥、registry token 或完整
-原始服务日志。`results/` 默认应只保存经审查的 CSV、配置和必要的最小证据。
+脚本自动为内层 daemon 导出/导入同一镜像，最终写出 `summary.csv`。若已有镜像归档，传入
+`--image-archive /path/to/runtime.tar` 可以避免再次 `docker save`。
 
-## 历史路径
+`Dockerfile.real-mlp-dp` 不会从空白克隆下载 LEGOSim 或 SimBricks；它需要兼容基础镜像和
+构建上下文中的 `third_party/simbricks`。上游依赖、固定补丁与离线基础镜像准备见
+[docs/external-overlays.md](docs/external-overlays.md) 和 [docker/README.md](docker/README.md)。
 
-原始八工作负载的有界功能验证、VMware 脚本及旧 Dockerfile 仍保留，便于复现过去的
-兼容性实验；它们不是当前 MLP-DP 性能实验的默认入口。尤其不要将有界功能窗口的观测时间
-当作自然完成 benchmark 的总运行时间。
+## 结果口径
+
+- **总仿真时间**：`coordinator_timing.txt` 的 coordinator 墙钟时长；包含该次 coordinator/
+  worker 的启动和回收，但不含外层 DinD 集群预配置。
+- **稳态仿真时间**：由 `transport.log` 中 PipeComm 外部时间戳界定的应用工作区间，排除
+  DinD、Swarm 和 worker 初始化。
+- **同步时间**：工作区间中所有跨节点 PipeComm 读阻塞区间的墙钟并集。
+- **同步占比**：同步时间 / 稳态仿真时间；使用并集而不是各 rank 等待时间之和，故范围为
+  0–100%。
+
+单节点不存在跨 rank 启动/完成屏障，稳态边界使用“首个工作 header 到最后一个 payload”近似，
+结果 JSON 中会明确标记该规则。
+
+## 目录
+
+- `real/`：原生 LEGOSim/SimBricks 分布式运行时、router、gateway 与 MLP-DP 源码。
+- `docker/`：运行镜像与 DinD netem 镜像 Dockerfile。
+- `scripts/`：DinD provisioning、矩阵运行、稳态指标与结果汇总脚本。
+- `docs/`：复现实验、结果与限制说明。
+- `platform/`：历史 Python/JSON-TCP 合成适配器；不得作为原生 LEGOSim 性能结果。
+
+不要提交 Docker image archive、DinD 数据目录、私钥、密码、registry token 或完整服务日志。
+`results/` 默认被忽略；只将经审查的参数、CSV 摘要或必要最小证据写入版本库。

@@ -1,11 +1,13 @@
 // Deterministic synchronous data-parallel two-layer MLP CPU rank.
 //
-// Eight CPU ranks and two GPU workers per rank are always present. A rank owns
-// a stable 1/8 input shard, gathers its two GPU gradients, and rank 0 reduces
-// rank gradients in ascending-rank order before broadcasting the new model.
+// One, two, four, or eight CPU ranks may be present, with two GPU workers per
+// rank. A rank owns a stable shard, gathers its two GPU gradients, and the
+// ranks use a deterministic binary-tree collective to reduce gradients and
+// broadcast the updated model.
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <chrono>
 #include <cstdlib>
 #include <cstdint>
 #include <fstream>
@@ -95,27 +97,62 @@ void add_into(std::vector<double>& destination, const std::vector<double>& sourc
   for (int index = 0; index < kParameters; ++index) destination[index] += source[index];
 }
 
+bool is_power_of_two(int value) {
+  return value > 0 && (value & (value - 1)) == 0;
+}
+
+void reduce_gradient_tree(int rank, int ranks, std::vector<double>& gradient) {
+  // At each level, the rank at the start of a contiguous group receives a
+  // partial gradient from the group's upper half. Every send/receive pair is
+  // independent of other groups at that level, avoiding rank-0 serialization.
+  for (int stride = 1; stride < ranks; stride *= 2) {
+    const int position_in_group = rank % (2 * stride);
+    if (position_in_group == stride) {
+      const int parent = rank - stride;
+      InterChiplet::sendMessage(parent, 0, rank, 0, gradient.data(),
+                                gradient.size() * sizeof(double));
+      return;
+    }
+    if (position_in_group == 0) {
+      const int child = rank + stride;
+      if (child < ranks) {
+        std::vector<double> child_gradient(kParameters);
+        InterChiplet::receiveMessage(rank, 0, child, 0, child_gradient.data(),
+                                     child_gradient.size() * sizeof(double));
+        add_into(gradient, child_gradient);
+      }
+    }
+  }
+}
+
+void broadcast_model_tree(int rank, int ranks, std::vector<double>& model) {
+  // Reverse the reduction tree. A rank receives the updated model before it
+  // forwards it to its own subtree, so each level can progress in parallel.
+  for (int stride = ranks / 2; stride >= 1; stride /= 2) {
+    const int position_in_group = rank % (2 * stride);
+    if (position_in_group == 0) {
+      const int child = rank + stride;
+      if (child < ranks) {
+        InterChiplet::sendMessage(child, 0, rank, 0, model.data(),
+                                  model.size() * sizeof(double));
+      }
+    } else if (position_in_group == stride) {
+      const int parent = rank - stride;
+      InterChiplet::receiveMessage(rank, 0, parent, 0, model.data(),
+                                   model.size() * sizeof(double));
+    }
+  }
+}
+
 void synchronise_model(int rank, int ranks, int samples, std::vector<double>& gradient,
                        std::vector<double>& model) {
+  reduce_gradient_tree(rank, ranks, gradient);
   if (rank == 0) {
-    // This order is part of the correctness contract. It is unchanged by the
-    // number of Swarm nodes, which keeps floating-point accumulation stable.
-    for (int peer = 1; peer < ranks; ++peer) {
-      std::vector<double> peer_gradient(kParameters);
-      InterChiplet::receiveMessage(0, 0, peer, 0, peer_gradient.data(),
-                                   peer_gradient.size() * sizeof(double));
-      add_into(gradient, peer_gradient);
-    }
     for (int index = 0; index < kParameters; ++index) {
       model[index] -= kLearningRate * gradient[index] / static_cast<double>(samples);
     }
-    for (int peer = 1; peer < ranks; ++peer) {
-      InterChiplet::sendMessage(peer, 0, 0, 0, model.data(), model.size() * sizeof(double));
-    }
-    return;
   }
-  InterChiplet::sendMessage(0, 0, rank, 0, gradient.data(), gradient.size() * sizeof(double));
-  InterChiplet::receiveMessage(rank, 0, 0, 0, model.data(), model.size() * sizeof(double));
+  broadcast_model_tree(rank, ranks, model);
 }
 
 void stop_gpu_workers(int rank) {
@@ -125,9 +162,11 @@ void stop_gpu_workers(int rank) {
   }
 }
 
-void print_result(int rank, int iterations, const std::vector<double>& model) {
+void print_result(int rank, int iterations, int64_t steady_nanoseconds,
+                  const std::vector<double>& model) {
   std::ostringstream result;
   result << "MLP_DP_RESULT rank=" << rank << " iterations=" << iterations
+         << " steady_ns=" << steady_nanoseconds
          << " parameters=" << kParameters << " values=" << std::setprecision(17);
   for (double value : model) result << value << ',';
   result << '\n';
@@ -136,6 +175,35 @@ void print_result(int rank, int iterations, const std::vector<double>& model) {
   // it through its proxy channel after Sniper exits.
   std::ofstream("mlp_dp_result.txt") << result.str();
   std::cout << result.str();
+}
+
+void start_measurement_barrier(int rank, int ranks) {
+  const int token = 1;
+  if (rank == 0) {
+    for (int peer = 1; peer < ranks; ++peer) {
+      int ready = 0;
+      InterChiplet::receiveMessage(0, 0, peer, 0, &ready, sizeof(ready));
+    }
+    for (int peer = 1; peer < ranks; ++peer) {
+      InterChiplet::sendMessage(peer, 0, 0, 0, const_cast<int*>(&token), sizeof(token));
+    }
+  } else {
+    InterChiplet::sendMessage(0, 0, rank, 0, const_cast<int*>(&token), sizeof(token));
+    int release = 0;
+    InterChiplet::receiveMessage(rank, 0, 0, 0, &release, sizeof(release));
+  }
+}
+
+void finish_measurement_barrier(int rank, int ranks) {
+  const int token = 1;
+  if (rank != 0) {
+    InterChiplet::sendMessage(0, 0, rank, 0, const_cast<int*>(&token), sizeof(token));
+    return;
+  }
+  for (int peer = 1; peer < ranks; ++peer) {
+    int done = 0;
+    InterChiplet::receiveMessage(0, 0, peer, 0, &done, sizeof(done));
+  }
 }
 }  // namespace
 
@@ -148,6 +216,10 @@ int main(int argc, char** argv) {
   const int y = std::stoi(argv[2]);
   const int ranks = world_size();
   const int samples = global_samples();
+  if (!is_power_of_two(ranks)) {
+    std::cerr << "LEGOSIM_MLP_DP_RANKS must be a power of two" << std::endl;
+    return 2;
+  }
   if (samples % (ranks * kGpusPerRank) != 0) {
     std::cerr << "global sample count must divide evenly across CPU/GPU ranks" << std::endl;
     return 2;
@@ -160,6 +232,11 @@ int main(int argc, char** argv) {
   initialise(model);
   const int iterations = training_iterations();
   const int samples_per_gpu = samples / (ranks * kGpusPerRank);
+  // All rank processes have already completed their simulator start-up when
+  // they reach this barrier. The measured interval therefore isolates the
+  // synchronous MLP work from process/container initialization and teardown.
+  start_measurement_barrier(rank, ranks);
+  const auto steady_started = std::chrono::steady_clock::now();
   for (int iteration = 0; iteration < iterations; ++iteration) {
     send_to_gpu(rank, 1, iteration, ranks, samples_per_gpu, model);
     send_to_gpu(rank, 2, iteration, ranks, samples_per_gpu, model);
@@ -167,7 +244,12 @@ int main(int argc, char** argv) {
     add_into(gradient, receive_gradient(rank, 2));
     synchronise_model(rank, ranks, samples, gradient, model);
   }
+  finish_measurement_barrier(rank, ranks);
+  const int64_t steady_nanoseconds = rank == 0
+      ? std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - steady_started).count()
+      : -1;
   stop_gpu_workers(rank);
-  print_result(rank, iterations, model);
+  print_result(rank, iterations, steady_nanoseconds, model);
   return 0;
 }

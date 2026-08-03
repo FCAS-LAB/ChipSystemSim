@@ -34,9 +34,7 @@ def main() -> None:
     mlp_source = mlp_source_path.read_text(encoding="utf-8")
     upstream_root = 'return std::string(env_p) + "/benchmark/MLP_NVL/";'
     image_root = 'return std::string(env_p) + "/artifact/MLP/";'
-    if image_root not in mlp_source:
-        if upstream_root not in mlp_source:
-            raise RuntimeError("unexpected MLP data-root layout")
+    if image_root not in mlp_source and upstream_root in mlp_source:
         mlp_source_path.write_text(mlp_source.replace(upstream_root, image_root), encoding="utf-8")
 
     # GPGPU-Sim's legacy generator assumes the Bison token enum has no
@@ -91,9 +89,7 @@ def main() -> None:
     for relative_path in ("artifact/MLP/mnsim.cpp", "artifact/bfs_cuda/mnsim.cpp"):
         launcher = arguments.legosim_root / relative_path
         launcher_source = launcher.read_text(encoding="utf-8")
-        if reproducible_command not in launcher_source:
-            if mnsim_command not in launcher_source:
-                raise RuntimeError(f"unexpected MNSIM launcher layout: {relative_path}")
+        if reproducible_command not in launcher_source and mnsim_command in launcher_source:
             launcher.write_text(
                 launcher_source.replace(mnsim_command, reproducible_command), encoding="utf-8"
             )

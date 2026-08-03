@@ -8,15 +8,30 @@ FROM ${BASE_IMAGE}
 
 COPY real/mlp_dp_cpu.cpp real/mlp_dp_gpu.cu real/mlp_dp_makefile real/mlp_dp.yml \
      /opt/legosim/artifact/MLP_DP/
+COPY third_party/simbricks /opt/simbricks
+COPY real/simbricks_pipe_gateway.cc real/simbricks_pipe_protocol.h /opt/chipsystemsim-distributed/
 
 # The workload coordinator and each Swarm transport service invoke these
 # runtime components by absolute path.  Keep them in the image so the stack
-# remains self-contained when a worker is scheduled on a remote VM.
+# remains self-contained when a worker is scheduled on another logical node.
 COPY real/worker.py real/process_proxy.py real/simbricks_worker_supervisor.py \
-     real/simbricks_pipe_router.py /opt/chipsystemsim-distributed/
+     real/simbricks_pipe_router.py real/generate_swarm_stack.py \
+     /opt/chipsystemsim-distributed/
+COPY real/entrypoint.sh /usr/local/bin/legosim-run
+RUN chmod 0755 /usr/local/bin/legosim-run
+
+RUN make -C /opt/simbricks dist/sockets/net_sockets && \
+    gcc -O3 -fPIC -std=gnu11 -I/opt/simbricks/lib -I/opt/simbricks \
+      -c /opt/simbricks/lib/simbricks/base/if.c -o /tmp/simbricks-base-if.o && \
+    g++ -O3 -std=gnu++17 -I/opt/simbricks/lib -I/opt/simbricks \
+      /opt/chipsystemsim-distributed/simbricks_pipe_gateway.cc /tmp/simbricks-base-if.o \
+      -o /usr/local/bin/simbricks-pipe-gateway -lpthread
 
 RUN /bin/bash -lc 'set -euo pipefail; \
-    export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=${CUDA_INSTALL_PATH:-/usr/local/cuda}; \
+    export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=${CUDA_INSTALL_PATH:-/usr}; \
     set +u; source /opt/legosim/gpgpu-sim/setup_environment; set -u; \
+    rm -f /opt/legosim/artifact/MLP_DP/bin/mlp_dp_cpu \
+          /opt/legosim/artifact/MLP_DP/bin/mlp_dp_gpu; \
     make -B -C /opt/legosim/artifact/MLP_DP -f mlp_dp_makefile \
-      NVCC="nvcc -ccbin /usr/bin/g++"'
+      bin/mlp_dp_cpu bin/mlp_dp_gpu \
+      NVCC="nvcc -ccbin /usr/bin/g++-10"'

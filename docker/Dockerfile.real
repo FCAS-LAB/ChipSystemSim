@@ -6,17 +6,26 @@
 ARG BASE_IMAGE=chipsystemsim:latest
 FROM ${BASE_IMAGE}
 
-ARG LEGOSIM_REF=816685160b54259d82fa3c913135ac9f2c68aeff
 ARG INSTALL_CUDA_TOOLKIT=1
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git build-essential cmake python2 python3 python3-yaml bison flex scons libboost-all-dev libyaml-cpp-dev libsqlite3-dev zlib1g-dev libbz2-dev libglib2.0-dev libx11-dev libxext-dev libxrender-dev libzmq3-dev libelf-dev \
     && if [ "$INSTALL_CUDA_TOOLKIT" = "1" ]; then DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nvidia-cuda-toolkit; fi \
     && rm -rf /var/lib/apt/lists/*
-RUN git clone --recursive https://github.com/FCAS-LAB/LEGOSIM_MICRO.git /opt/legosim && cd /opt/legosim && git checkout "$LEGOSIM_REF" && git submodule update --init --recursive
+# The native build needs PinPlay, Sniper Python and McPAT archives that are
+# often unavailable from their original upstream hosts. Supply a complete
+# recursive LEGOSim source snapshot in upstream/LEGOSIM_MICRO instead of
+# cloning during docker build, so the result does not depend on GitHub access.
+COPY upstream/LEGOSIM_MICRO /opt/legosim
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends wget xutils-dev libgl1-mesa-dev nlohmann-json3-dev gcc-10 g++-10 && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/legosim
 COPY real/entrypoint.sh /usr/local/bin/legosim-run
 COPY real/build-native.sh /usr/local/bin/legosim-build-native
-COPY real/fifo_broker.py real/worker.py real/process_proxy.py real/remote_pipe_comm.h real/apply_overlay.py /opt/chipsystemsim-distributed/
+# build-native.sh invokes the two source-level remote-PipeComm transformations;
+# apply_overlay.py also installs the MNSIM compatibility task. Keep all of
+# those build-time inputs in the same explicit overlay copy.
+COPY real/fifo_broker.py real/worker.py real/process_proxy.py real/remote_pipe_comm.h \
+     real/apply_overlay.py real/mnsim_compat.cpp \
+     real/patch_gpgpusim_remote_pipe.py real/patch_pipe_comm_remote.py \
+     /opt/chipsystemsim-distributed/
 RUN chmod +x /usr/local/bin/legosim-run
 RUN chmod +x /usr/local/bin/legosim-build-native
 RUN python3 /opt/chipsystemsim-distributed/apply_overlay.py && /usr/local/bin/legosim-build-native

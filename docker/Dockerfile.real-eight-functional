@@ -1,4 +1,4 @@
-# Native eight-workload runtime image for bounded VMware Swarm experiments.
+# Native eight-workload runtime image for bounded distributed functional experiments.
 #
 # The base already contains LEGOSim, SimBricks BaseIf transport, and the
 # distributed runtime overlay. The four single-stage sources are copied into

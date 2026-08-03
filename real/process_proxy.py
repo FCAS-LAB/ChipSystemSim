@@ -67,7 +67,7 @@ def main() -> None:
     # or bound its port, so retry a bounded number of times instead of making
     # the experiment nondeterministically fail at startup.
     connection = None  # type: Optional[socket.socket]
-    # Multi-VM cold starts can initialize several BaseIf peers concurrently.
+    # Concurrent logical-node cold starts can initialize several BaseIf peers.
     # Keep this comfortably above the worker supervisor's 90-second handshake
     # allowance so a healthy worker is not discarded during startup pressure.
     # An eight-node SimBricks mesh must finish all BaseIf handshakes before
