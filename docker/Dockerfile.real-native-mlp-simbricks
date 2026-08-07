@@ -61,11 +61,18 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 
 # Build a coordinator-local ns-3 Phase-2 adapter.  Only generic ns-3 modules
 # are enabled: LEGOSim feeds this model with bench.txt rather than emulating a
-# SimBricks NIC/device endpoint.
+# SimBricks NIC/device endpoint.  The clone retries transient TLS failures over
+# HTTP/1.1, while the detached revision below remains the reproducibility bound.
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       git cmake ninja-build libboost-all-dev libsqlite3-dev && \
     rm -rf /var/lib/apt/lists/* && \
-    git clone "$NS3_REPOSITORY" /opt/ns3 && \
+    for attempt in 1 2 3; do \
+      rm -rf /opt/ns3; \
+      if git -c http.version=HTTP/1.1 clone "$NS3_REPOSITORY" /opt/ns3; then break; fi; \
+      test "$attempt" = 3 && exit 1; \
+      sleep $((attempt * 5)); \
+    done && \
+    test -d /opt/ns3/.git && \
     git -C /opt/ns3 checkout --detach "$NS3_REVISION" && \
     cp /opt/chipsystemsim-distributed/ns3_phase2.cc /opt/ns3/scratch/ns3_phase2.cc && \
     cd /opt/ns3 && \

@@ -63,7 +63,7 @@ docker build -t chipsystemsim:native-mlp-ns3 \
   -f docker/Dockerfile.real-native-mlp-simbricks .
 ```
 
-镜像构建需要访问固定的 ns-3 Git 仓库以及 PyTorch 官方 CPU wheel 索引，并以最多两个并行编译任务构建 ns-3。构建固定使用与 Ubuntu 22.04 / Python 3.10 兼容的 `torch==1.11.0+cpu` 与 `torchvision==0.12.0+cpu`；运行阶段不依赖外网。
+镜像构建需要访问固定的 ns-3 Git 仓库以及 PyTorch 官方 CPU wheel 索引，并以最多两个并行编译任务构建 ns-3。构建固定使用与 Ubuntu 22.04 / Python 3.10 兼容的 `torch==1.11.0+cpu` 与 `torchvision==0.12.0+cpu`；对瞬时 Git TLS 断连会以 HTTP/1.1 最多重试三次，但最终仍强制 checkout 固定 ns-3 修订。运行阶段不依赖外网。
 
 `chipsystemsim:native-mlp-simbricks-v30` 是服务器保留的、已含原始 LEGOSim MLP 运行时的基底镜像。若改用其他基底，必须先验证其中同时包含 `/opt/legosim/artifact/MLP`、GPGPU-Sim、Sniper、MNSIM 与 SimBricks socket transport；不能用仅含 MLP-DP 工作负载的镜像替代原始 MLP 基底。
 
