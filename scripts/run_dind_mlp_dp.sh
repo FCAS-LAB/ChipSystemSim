@@ -133,27 +133,11 @@ timing_run="$timing_artifacts/coordinator"
 [[ -f "$timing_run/manifest.txt" ]] || {
   echo "coordinator timing artifact manifest is missing" >&2; exit 1;
 }
-final_phase1_bench_records=0
-[[ -f "$timing_run/bench.txt" ]] && final_phase1_bench_records=$(awk 'NF { count += 1 } END { print count + 0 }' "$timing_run/bench.txt")
+python3 "$script_dir/validate_ns3_timing_feedback.py" \
+  --artifact-root "$timing_run" \
+  --coordinator-log "$output_dir/coordinator.log" \
+  --output "$output_dir/timing_feedback.txt"
 last_phase2_dir=$(find "$timing_run" -type f -name phase2_input_bench.txt -printf '%h\n' | sort -V | tail -n 1)
-phase2_bench_records=0
-phase2_delay_records=0
-if [[ -n "$last_phase2_dir" ]]; then
-  phase2_bench_records=$(awk 'NF { count += 1 } END { print count + 0 }' "$last_phase2_dir/phase2_input_bench.txt")
-  phase2_delay_records=$(awk 'NF { count += 1 } END { print count + 0 }' "$last_phase2_dir/phase2_delayInfo.txt")
-fi
-{
-  printf 'final_phase1_bench_records=%s\n' "$final_phase1_bench_records"
-  printf 'last_phase2_bench_records=%s\n' "$phase2_bench_records"
-  printf 'last_phase2_delay_records=%s\n' "$phase2_delay_records"
-  if ((phase2_bench_records > 0 && phase2_delay_records == 0)); then
-    printf 'timing_feedback=missing\n'
-  elif ((phase2_bench_records > 0)); then
-    printf 'timing_feedback=present\n'
-  else
-    printf 'timing_feedback=not_required\n'
-  fi
-} > "$output_dir/timing_feedback.txt"
 
 : > "$output_dir/transport.log"
 for slot in $(seq 0 $((nodes - 1))); do

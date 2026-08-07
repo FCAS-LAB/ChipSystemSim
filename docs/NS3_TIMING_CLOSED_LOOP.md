@@ -97,7 +97,7 @@ find /mnt/large-disk/results/mlp-ns3-n1/timing-artifacts/coordinator \
 
 1. `timing_feedback=present`；
 2. 最近一个 `proc_r*_p2_t*/phase2_input_bench.txt` 与同目录的 `phase2_delayInfo.txt` 都非空，且记录数一致；
-3. 协调器日志在随后的 Phase 1 出现非零 `Load N delay records.`；
+3. `scripts/validate_ns3_timing_feedback.py` 已同时核验协调器日志在随后的 Phase 1 出现非零 `Load N delay records.`；
 4. `phase2_metrics.csv` 和 `phase2_summary.json` 均存在。
 
 不要只依据 `End of Simulation` 或 Phase-2 进程的零退出码声称时序闭环已生效；旧实验恰好暴露了这种不足：PopNet 启动成功，但下一轮仍加载零条 `delayInfo`。
@@ -114,6 +114,8 @@ find /mnt/large-disk/results/mlp-ns3-n1/timing-artifacts/coordinator \
 | `cross_physical_host_*` | 主机 wall-clock ns | 仅当 routing 配置将两个 worker 标为不同物理 host 时计入。单机 DinD 正确结果为零。 |
 
 对于 wall-clock 同步比，只有 `*_sync_wall_union_ns / coordinator wall-clock` 可以形成 0–100% 的并集占比；不要使用各 router 的 `sync_wait_ns` 求和除以总时长，因为并行 rank 的等待会重叠。
+
+`scripts/summarize_dind_mlp_dp.py` 会将这些字段导出为 CSV 中的 `cross_legosim_*`、`cross_physical_host_*` 和 `ns3_normal_*` 列。单机 DinD 的 `cross_physical_host_*` 应为零；若非零，说明生成 routing 时显式把逻辑 worker 映射到了多个物理 host。
 
 ## 已验证范围与未完成项
 

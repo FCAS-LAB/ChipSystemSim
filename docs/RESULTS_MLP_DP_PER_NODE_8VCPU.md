@@ -4,6 +4,8 @@
 每节点 1 CPU rank + 2 GPU worker、每节点 8 vCPU/16 GiB，以及跨节点单向 1 ms `netem`
 延迟。所有 coordinator 均以 `exit=0` 自然结束。
 
+> **历史基线限制。** 本页数据产生于 `bench.txt → PopNet → delayInfo.txt` 未被完整留存和验证的旧流程，不能用于说明 ns-3 已反馈通信 cycle；这里的“跨节点”“同步时间”仅是当时 Docker/PipeComm 功能路径的墙钟测量，也不能证明真实物理多机代价。新的 ns-3 闭环结果必须通过 [NS3_TIMING_CLOSED_LOOP.md](NS3_TIMING_CLOSED_LOOP.md) 所定义的 `timing_feedback=present` 检查，并使用 `cross_legosim_*` 与 `cross_physical_host_*` 分列。
+
 | 节点 | 总 vCPU / 内存 | 稳态时间 | 总仿真时间 | 稳态归一化 | 稳态加速比 | 同步时间 | 同步占比 | 跨节点接收 |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | 1 | 8 / 16 GiB | 79.638 s | 111.189 s | 1.000 | 1.000x | 0 s | 0% | 0 B / 0 次 |

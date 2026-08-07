@@ -42,14 +42,33 @@ def collect_run(run_directory: Path, nodes: int) -> Dict[str, object]:
     total_seconds = parse_timestamp(timing["finish"]) - parse_timestamp(timing["start"])
     if total_seconds <= 0:
         raise RuntimeError(f"{run_directory}: non-positive coordinator duration")
-    sync_seconds = int(metrics.get("cross_sync_wall_union_ns", "0")) / 1_000_000_000
+    logical_sync_seconds = int(metrics.get("cross_legosim_sync_wall_union_ns", "0")) / 1_000_000_000
+    physical_sync_seconds = int(metrics.get("cross_physical_host_sync_wall_union_ns", "0")) / 1_000_000_000
     return {
         "nodes": nodes,
         "total_simulation_seconds": total_seconds,
-        "cross_node_sync_wall_seconds": sync_seconds,
-        "cross_node_sync_overhead_percent": 100.0 * sync_seconds / total_seconds,
-        "cross_node_bytes": int(metrics["cross_bytes"]),
-        "cross_node_records": int(metrics["cross_records"]),
+        # Different logical workers in a one-host DinD experiment are
+        # cross-LEGOSim, not cross-physical-machine. Keep both measurements
+        # explicit so a chart cannot silently promote a container boundary to
+        # a physical network boundary.
+        "cross_legosim_sync_wall_seconds": logical_sync_seconds,
+        "cross_legosim_sync_overhead_percent": 100.0 * logical_sync_seconds / total_seconds,
+        "cross_legosim_bytes": int(metrics.get("cross_legosim_bytes", "0")),
+        "cross_legosim_records": int(metrics.get("cross_legosim_records", "0")),
+        "cross_physical_host_sync_wall_seconds": physical_sync_seconds,
+        "cross_physical_host_sync_overhead_percent": 100.0 * physical_sync_seconds / total_seconds,
+        "cross_physical_host_bytes": int(metrics.get("cross_physical_host_bytes", "0")),
+        "cross_physical_host_records": int(metrics.get("cross_physical_host_records", "0")),
+        "ns3_normal_records": int(metrics.get("ns3_normal_records", "0")),
+        "ns3_normal_source_sync_advance_cycles": int(
+            metrics.get("ns3_normal_source_sync_advance_cycles", "0")
+        ),
+        "ns3_normal_destination_network_delay_cycles": int(
+            metrics.get("ns3_normal_destination_network_delay_cycles", "0")
+        ),
+        "ns3_normal_destination_sync_block_cycles": int(
+            metrics.get("ns3_normal_destination_sync_block_cycles", "0")
+        ),
     }
 
 
