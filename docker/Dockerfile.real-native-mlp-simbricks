@@ -8,6 +8,13 @@ FROM ${BASE_IMAGE}
 
 ARG NS3_REPOSITORY=https://github.com/simbricks/ns-3.git
 ARG NS3_REVISION=feb1f92eb9e71b129d5ae4aa09e4484c1554cc51
+# Ubuntu 22.04 uses Python 3.10, for which the former 1.10.1 pin has no
+# compatible wheel on the configured mirror.  MNSIM only needs Torch for host
+# model loading; GPU execution remains in GPGPU-Sim, so the official CPU wheels
+# avoid adding an unrelated CUDA runtime to the simulator image.
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+ARG TORCH_VERSION=1.11.0+cpu
+ARG TORCHVISION_VERSION=0.12.0+cpu
 
 COPY third_party/simbricks /opt/simbricks
 # MLP includes <nlohmann/json.hpp>, while its upstream makefile omits a local
@@ -30,8 +37,8 @@ RUN chmod 0755 /usr/local/bin/legosim-run
 # optional LEGOSIM_MLP_MAX_ITERATIONS environment variable is set.
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       libelf-dev && rm -rf /var/lib/apt/lists/* && \
-    /usr/bin/python3 -m pip install --no-cache-dir \
-      -i https://pypi.tuna.tsinghua.edu.cn/simple torch==1.10.1 torchvision==0.11.2 && \
+    /usr/bin/python3 -m pip install --no-cache-dir --index-url "$TORCH_INDEX_URL" \
+      "torch==$TORCH_VERSION" "torchvision==$TORCHVISION_VERSION" && \
     make -B -C /opt/simbricks dist/sockets/net_sockets && \
     gcc -O2 -Wall -Wextra -Werror -Wno-error=unused-parameter -std=c11 \
       -I/opt/simbricks -I/opt/simbricks/lib -c /opt/simbricks/lib/simbricks/base/if.c \
