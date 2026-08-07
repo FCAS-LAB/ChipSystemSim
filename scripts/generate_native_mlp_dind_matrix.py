@@ -16,7 +16,25 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-UPSTREAM_MLP = ROOT.parent / "LEGOSIM_MICRO" / "artifact" / "MLP" / "mlp.yml"
+
+
+def locate_upstream_mlp() -> Path:
+    """Find the original MLP YAML in either supported source-tree layout.
+
+    A developer checkout commonly keeps ``ChipSystemSim`` and ``LEGOSIM_MICRO``
+    as sibling directories.  Packaged build contexts instead retain the upstream
+    tree below ``ChipSystemSim/upstream``.  Supporting both layouts makes the
+    generated DinD matrix reproducible on a clean server checkout.
+    """
+    candidates = (
+        ROOT.parent / "LEGOSIM_MICRO" / "artifact" / "MLP" / "mlp.yml",
+        ROOT / "upstream" / "LEGOSIM_MICRO" / "artifact" / "MLP" / "mlp.yml",
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    locations = ", ".join(str(candidate) for candidate in candidates)
+    raise FileNotFoundError(f"original MLP YAML not found; checked: {locations}")
 
 
 def call(*arguments: str) -> None:
@@ -42,8 +60,7 @@ def main() -> None:
     parser.add_argument("--ns3-queue-packets", type=int, default=100000)
     arguments = parser.parse_args()
 
-    if not UPSTREAM_MLP.is_file():
-        raise FileNotFoundError(f"original MLP YAML not found: {UPSTREAM_MLP}")
+    upstream_mlp = locate_upstream_mlp()
     if arguments.ns3_cycle_ns < 1 or arguments.ns3_link_delay_ns < 1 or arguments.ns3_queue_packets < 1:
         raise ValueError("ns-3 timing parameters must be positive")
 
@@ -58,7 +75,7 @@ def main() -> None:
 
         call(
             str(ROOT / "real" / "generate_placement.py"),
-            "--source-yaml", str(UPSTREAM_MLP), "--workload-name", "mlp",
+            "--source-yaml", str(upstream_mlp), "--workload-name", "mlp",
             "--nodes", str(node_count), "--placement-policy", arguments.placement_policy,
             "--output", str(placement),
         )
@@ -69,7 +86,7 @@ def main() -> None:
              "--output", str(routing))
         yaml_command = [
             str(ROOT / "real" / "generate_distributed_yaml.py"),
-            "--source-yaml", str(UPSTREAM_MLP), "--placement", str(placement),
+            "--source-yaml", str(upstream_mlp), "--placement", str(placement),
             "--output", str(workload), "--benchmark-root", "/opt/legosim/artifact/MLP",
             "--sniper-cores", "1", "--sniper-maxthreads", "1",
             "--phase2-backend", "ns3",

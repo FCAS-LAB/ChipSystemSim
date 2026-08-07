@@ -58,16 +58,14 @@ src_cycle src_node dst_node descriptor delay_count delay_0 delay_1 [...]
 先准备与目标 Dockerfile ABI 兼容的 LEGOSim + SimBricks 基础镜像，再执行例如：
 
 ```bash
-docker build -t chipsystemsim:mlp-dp-ns3 \
-  --build-arg BASE_IMAGE=chipsystemsim:native-mlp-simbricks-v30 \
-  -f docker/Dockerfile.real-mlp-dp .
-
 docker build -t chipsystemsim:native-mlp-ns3 \
-  --build-arg BASE_IMAGE=chipsystemsim:mlp-dp-8ranks-v12-iterable \
+  --build-arg BASE_IMAGE=chipsystemsim:native-mlp-simbricks-v30 \
   -f docker/Dockerfile.real-native-mlp-simbricks .
 ```
 
 镜像构建需要访问固定的 ns-3 Git 仓库，并以最多两个并行编译任务构建 ns-3。运行阶段不依赖外网。
+
+`chipsystemsim:native-mlp-simbricks-v30` 是服务器保留的、已含原始 LEGOSim MLP 运行时的基底镜像。若改用其他基底，必须先验证其中同时包含 `/opt/legosim/artifact/MLP`、GPGPU-Sim、Sniper、MNSIM 与 SimBricks socket transport；不能用仅含 MLP-DP 工作负载的镜像替代原始 MLP 基底。
 
 ## 单机 DinD 运行和闭环检查
 
@@ -78,13 +76,27 @@ python3 scripts/generate_native_mlp_dind_matrix.py \
   --output-root /mnt/large-disk/mlp-ns3-config \
   --image chipsystemsim:native-mlp-ns3 --nodes 1
 
-scripts/provision_dind_swarm.sh --nodes 1 --prefix chipsystemsim-ns3-1
+scripts/provision_dind_swarm.sh \
+  --nodes 1 --prefix chipsystemsim-ns3-1 \
+  --image chipsystemsim:native-mlp-ns3 \
+  --per-node-cpus 8 --per-node-memory 16GiB
 scripts/run_dind_mlp_dp.sh \
   --nodes 1 --prefix chipsystemsim-ns3-1 \
   --config-dir /mnt/large-disk/mlp-ns3-config/mlp-nodes1 \
   --stack chipsystemsim_ns3_mlp_1 \
   --output-dir /mnt/large-disk/results/mlp-ns3-n1
 ```
+
+对于“每个逻辑节点资源相同”的 1/2/4/8 节点扩展实验，使用新增的每节点模式，而不要使用默认的固定总资源模式。例如每节点 8 vCPU、16 GiB：
+
+```bash
+scripts/provision_dind_swarm.sh \
+  --nodes 4 --prefix chipsystemsim-ns3-4 \
+  --image chipsystemsim:native-mlp-ns3 \
+  --per-node-cpus 8 --per-node-memory 16GiB
+```
+
+默认 `--total-cpus 8 --total-memory 32g` 仍保留，用于固定总资源的可比实验；两种资源模式不要在同一结果表中混合比较。
 
 上述 `run_dind_mlp_dp.sh` 完成后必须同时检查：
 

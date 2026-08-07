@@ -11,6 +11,8 @@ nodes=0
 image=""
 total_cpus=8
 total_memory="32g"
+per_node_cpus=""
+per_node_memory=""
 delay="1ms"
 rate="none"
 image_load_jobs=1
@@ -27,6 +29,9 @@ Usage: provision_dind_swarm.sh --nodes N --image IMAGE [options]
 Options:
   --total-cpus N       Fixed aggregate CPU quota (default: 8).
   --total-memory SIZE  Fixed aggregate memory quota (default: 32g).
+  --per-node-cpus N    Fixed CPU quota for every DinD node; overrides aggregate CPU mode.
+  --per-node-memory SIZE
+                       Fixed memory limit for every DinD node; overrides aggregate memory mode.
   --delay DURATION     One-way netem delay per DinD external interface (default: 1ms).
   --rate RATE|none     Optional netem link-rate cap (default: none).
   --image-load-jobs N  Concurrent nested image imports (default: 1).
@@ -44,6 +49,8 @@ while (($#)); do
     --image) image="$2"; shift 2 ;;
     --total-cpus) total_cpus="$2"; shift 2 ;;
     --total-memory) total_memory="$2"; shift 2 ;;
+    --per-node-cpus) per_node_cpus="$2"; shift 2 ;;
+    --per-node-memory) per_node_memory="$2"; shift 2 ;;
     --delay) delay="$2"; shift 2 ;;
     --rate) rate="$2"; shift 2 ;;
     --image-load-jobs) image_load_jobs="$2"; shift 2 ;;
@@ -59,6 +66,16 @@ done
 
 [[ "$nodes" =~ ^(1|2|4|8)$ ]] || { echo "--nodes must be 1, 2, 4, or 8" >&2; exit 2; }
 [[ "$image_load_jobs" =~ ^[1-9][0-9]*$ ]] || { echo "--image-load-jobs must be a positive integer" >&2; exit 2; }
+if [[ -n "$per_node_cpus" || -n "$per_node_memory" ]]; then
+  [[ -n "$per_node_cpus" && -n "$per_node_memory" ]] || {
+    echo "--per-node-cpus and --per-node-memory must be specified together" >&2
+    exit 2
+  }
+  [[ "$per_node_cpus" =~ ^[1-9][0-9]*(\.[0-9]+)?$ ]] || {
+    echo "--per-node-cpus must be a positive number" >&2
+    exit 2
+  }
+fi
 if [[ -n "$dind_data_root" ]]; then
   [[ "$dind_data_root" == /* && "$dind_data_root" != "/" ]] || {
     echo "--dind-data-root must be a non-root absolute path" >&2
@@ -121,9 +138,15 @@ remove_experiment
 [[ -z "$dind_data_root" ]] || mkdir -p "$dind_data_root"
 docker network create --driver bridge --subnet "$subnet" "$network" >/dev/null
 
-# Docker accepts fractional CPU quotas. All requested points divide 8 exactly.
-per_node_cpus=$(awk -v total="$total_cpus" -v count="$nodes" 'BEGIN { printf "%.3f", total / count }')
-memory_bytes=$(python3 - "$total_memory" <<'PY'
+# Docker accepts fractional CPU quotas.  In aggregate mode the total is divided
+# equally; in per-node mode each logical node retains the specified resources.
+if [[ -n "$per_node_cpus" ]]; then
+  selected_memory="$per_node_memory"
+else
+  per_node_cpus=$(awk -v total="$total_cpus" -v count="$nodes" 'BEGIN { printf "%.3f", total / count }')
+  selected_memory="$total_memory"
+fi
+memory_bytes=$(python3 - "$selected_memory" <<'PY'
 import re
 import sys
 
@@ -137,7 +160,11 @@ power = {"": 0, "k": 1, "kb": 1, "kib": 1, "m": 2, "mb": 2, "mib": 2,
 print(int(number) * (1024 ** power))
 PY
 )
-per_node_memory=$((memory_bytes / nodes))
+if [[ -z "$per_node_memory" ]]; then
+  per_node_memory=$((memory_bytes / nodes))
+else
+  per_node_memory=$memory_bytes
+fi
 
 wait_docker() {
   local container="$1"
