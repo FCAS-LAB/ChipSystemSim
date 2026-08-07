@@ -6,7 +6,7 @@
 ARG BASE_IMAGE=chipsystemsim:mlp-dp-8ranks-v12-iterable
 FROM ${BASE_IMAGE}
 
-ARG NS3_REPOSITORY=https://github.com/simbricks/ns-3.git
+ARG NS3_ARCHIVE_BASE=https://codeload.github.com/simbricks/ns-3/tar.gz
 ARG NS3_REVISION=feb1f92eb9e71b129d5ae4aa09e4484c1554cc51
 # Ubuntu 22.04 uses Python 3.10, for which the former 1.10.1 pin has no
 # compatible wheel on the configured mirror.  MNSIM only needs Torch for host
@@ -61,19 +61,19 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 
 # Build a coordinator-local ns-3 Phase-2 adapter.  Only generic ns-3 modules
 # are enabled: LEGOSim feeds this model with bench.txt rather than emulating a
-# SimBricks NIC/device endpoint.  The clone retries transient TLS failures over
-# HTTP/1.1, while the detached revision below remains the reproducibility bound.
+# SimBricks NIC/device endpoint.  Use GitHub codeload's archive for the pinned
+# revision: this avoids the unreliable Git smart-HTTP connection observed on
+# some build hosts while keeping the exact source revision in the URL.
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      git cmake ninja-build libboost-all-dev libsqlite3-dev && \
+      curl git cmake ninja-build libboost-all-dev libsqlite3-dev && \
     rm -rf /var/lib/apt/lists/* && \
-    for attempt in 1 2 3; do \
-      rm -rf /opt/ns3; \
-      if git -c http.version=HTTP/1.1 clone "$NS3_REPOSITORY" /opt/ns3; then break; fi; \
-      test "$attempt" = 3 && exit 1; \
-      sleep $((attempt * 5)); \
-    done && \
-    test -d /opt/ns3/.git && \
-    git -C /opt/ns3 checkout --detach "$NS3_REVISION" && \
+    curl --fail --location --retry 3 --retry-all-errors --retry-delay 5 --http1.1 \
+      "${NS3_ARCHIVE_BASE}/${NS3_REVISION}" \
+      --output /tmp/ns3-source.tar.gz && \
+    mkdir -p /opt/ns3 && \
+    tar -xzf /tmp/ns3-source.tar.gz --strip-components=1 -C /opt/ns3 && \
+    test -x /opt/ns3/ns3 && \
+    rm -f /tmp/ns3-source.tar.gz && \
     cp /opt/chipsystemsim-distributed/ns3_phase2.cc /opt/ns3/scratch/ns3_phase2.cc && \
     cd /opt/ns3 && \
     USER=ns3 ./ns3 configure --disable-examples --disable-tests \
