@@ -25,7 +25,7 @@ COPY third_party/MNSIMChiplet /opt/legosim/MNSIMChiplet
 COPY third_party/tasks-vgg13 /opt/legosim/tasks-vgg13
 COPY real/simbricks_pipe_gateway.cc real/simbricks_pipe_protocol.h \
      real/process_proxy.py real/simbricks_worker_supervisor.py \
-     real/patch_mlp_bounded_iterations.py real/patch_mlp_mnsim_runtime.py \
+     real/patch_mlp_bounded_iterations.py real/patch_mlp_mnsim_runtime.py real/mnsim_compat.py \
      real/ns3_phase2.cc real/ns3_phase2_runner.py \
      /opt/chipsystemsim-distributed/
 COPY real/entrypoint.sh /usr/local/bin/legosim-run
@@ -48,7 +48,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
       /opt/chipsystemsim-distributed/simbricks_pipe_gateway.cc \
       /tmp/simbricks-base-if.o -o /usr/local/bin/simbricks-pipe-gateway && \
     /bin/bash -lc 'set -euo pipefail; \
-      export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=${CUDA_INSTALL_PATH:-/usr/local/cuda}; \
+      export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=${CUDA_INSTALL_PATH:-/usr}; \
       # This upstream script probes optional remote-GPU variables.  Source it
       # with nounset temporarily disabled, then restore the strict shell mode.
       set +u; source /opt/legosim/gpgpu-sim/setup_environment; set -u; \

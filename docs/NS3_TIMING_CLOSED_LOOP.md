@@ -67,6 +67,8 @@ docker build -t chipsystemsim:native-mlp-ns3 \
 
 `chipsystemsim:native-mlp-simbricks-v30` 是服务器保留的、已含原始 LEGOSim MLP 运行时的基底镜像。若改用其他基底，必须先验证其中同时包含 `/opt/legosim/artifact/MLP`、GPGPU-Sim、Sniper、MNSIM 与 SimBricks socket transport；不能用仅含 MLP-DP 工作负载的镜像替代原始 MLP 基底。
 
+部分保留的原始 MLP 基底已将不可公开获得的私有 MNSIM fork 替换为项目内的 `real/mnsim_compat.py`。构建会显式复制该脚本，并把其来源校准值及每次调用写入审计文件；这不是对私有 MNSIM 微架构的重建，结果中必须保留该兼容层限制。Dockerfile 同时以 Ubuntu 22.04 基底中实际含 `bin/nvcc` 的 `/usr` 作为 GPGPU-Sim 的 `CUDA_INSTALL_PATH`。
+
 ## 单机 DinD 运行和闭环检查
 
 原始 MLP 的配置生成器会自动选择 ns-3 Phase 2：

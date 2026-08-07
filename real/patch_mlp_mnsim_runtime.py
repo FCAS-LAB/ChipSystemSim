@@ -32,10 +32,17 @@ NEW_CONFIG_PATH = "/opt/legosim/tasks-vgg13/"
 OLD_MAIN_COMMAND = "cd MNSIM; python ./main.py -NN "
 NEW_MAIN_COMMAND = "cd MNSIM; /usr/bin/python3 ./main.py -NN "
 OLD_ID_ARGUMENTS = " + ' -Id1 ' + str(id[0]) + ' -Id2 ' + str(id[1])"
+COMPAT_BACKEND_MARKER = "mnsim_compat.py"
 
 
 def main() -> None:
     source = SOURCE.read_text(encoding="utf-8")
+    # Some preserved server base images already replace the unpublished MNSIM
+    # fork with the checked-in source-calibrated compatibility backend.  That
+    # is a valid, self-contained state once Dockerfile copies mnsim_compat.py;
+    # never try to apply the older workstation-path rewrite a second time.
+    if COMPAT_BACKEND_MARKER in source:
+        return
     if NEW_COMMAND not in source or NEW_RESULT not in source:
         if OLD_COMMAND not in source or OLD_RESULT not in source:
             raise RuntimeError(f"unexpected upstream MNSIM layout: {SOURCE}")
