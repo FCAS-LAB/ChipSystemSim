@@ -36,10 +36,16 @@ def main() -> None:
                         help="forward phase-one stdout/stderr to coordinator logs")
     parser.add_argument("--mnsim-fast-input-size", type=int,
                         help="smaller MNSIM feature map for labelled functional/communication validation")
+    parser.add_argument("--ns3-cycle-ns", type=int, default=1)
+    parser.add_argument("--ns3-link-rate", default="128Gbps")
+    parser.add_argument("--ns3-link-delay-ns", type=int, default=1)
+    parser.add_argument("--ns3-queue-packets", type=int, default=100000)
     arguments = parser.parse_args()
 
     if not UPSTREAM_MLP.is_file():
         raise FileNotFoundError(f"original MLP YAML not found: {UPSTREAM_MLP}")
+    if arguments.ns3_cycle_ns < 1 or arguments.ns3_link_delay_ns < 1 or arguments.ns3_queue_packets < 1:
+        raise ValueError("ns-3 timing parameters must be positive")
 
     for node_count in arguments.nodes:
         output = arguments.output_root / f"mlp-nodes{node_count}"
@@ -67,6 +73,10 @@ def main() -> None:
             "--output", str(workload), "--benchmark-root", "/opt/legosim/artifact/MLP",
             "--sniper-cores", "1", "--sniper-maxthreads", "1",
             "--phase2-backend", "ns3",
+            "--ns3-cycle-ns", str(arguments.ns3_cycle_ns),
+            "--ns3-link-rate", arguments.ns3_link_rate,
+            "--ns3-link-delay-ns", str(arguments.ns3_link_delay_ns),
+            "--ns3-queue-packets", str(arguments.ns3_queue_packets),
         ]
         if arguments.stream_output:
             yaml_command.append("--stream-output")

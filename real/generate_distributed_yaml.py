@@ -30,6 +30,8 @@ def main() -> None:
                         help="ns-3 point-to-point link rate when --phase2-backend=ns3")
     parser.add_argument("--ns3-link-delay-ns", type=int, default=1,
                         help="ns-3 propagation delay per topology edge when --phase2-backend=ns3")
+    parser.add_argument("--ns3-queue-packets", type=int, default=100000,
+                        help="ns-3 per-link DropTail queue bound when --phase2-backend=ns3")
     parser.add_argument("--gdb-process-index", type=int,
                         help="run exactly one phase-one process under batch gdb and print all thread backtraces")
     parser.add_argument("--sniper-cores", type=int,
@@ -47,7 +49,7 @@ def main() -> None:
         raise ValueError("--gpgpu-max-completed-cta must be positive")
     if arguments.gpgpu_max_instructions is not None and arguments.gpgpu_max_instructions < 1:
         raise ValueError("--gpgpu-max-instructions must be positive")
-    if arguments.ns3_cycle_ns < 1 or arguments.ns3_link_delay_ns < 1:
+    if arguments.ns3_cycle_ns < 1 or arguments.ns3_link_delay_ns < 1 or arguments.ns3_queue_packets < 1:
         raise ValueError("ns-3 timing parameters must be positive")
     if arguments.remote_phase2 and arguments.phase2_backend == "ns3":
         raise ValueError("ns-3 Phase 2 must remain coordinator-local so delayInfo is available to the next round")
@@ -152,6 +154,7 @@ def main() -> None:
                 "--flit-bytes", str(flit_count * 8),
                 "--link-rate", arguments.ns3_link_rate,
                 "--link-delay-ns", str(arguments.ns3_link_delay_ns),
+                "--queue-packets", str(arguments.ns3_queue_packets),
                 "--metrics-csv", "../ns3_phase2_metrics.csv",
                 "--summary-json", "../ns3_phase2_summary.json",
             ]

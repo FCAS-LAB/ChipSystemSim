@@ -141,7 +141,7 @@ phase1:
 
 phase2:
   - cmd: "python3"
-    args: ["/opt/chipsystemsim-distributed/ns3_phase2_runner.py", "--bench", "../bench.txt", "--delay-info", "../delayInfo.txt", "--topology", "../topology/mesh_6_6_flit_4.gv", "--nodes", "36", "--cycle-ns", "1", "--flit-bytes", "32", "--link-rate", "128Gbps", "--link-delay-ns", "1", "--metrics-csv", "../ns3_phase2_metrics.csv", "--summary-json", "../ns3_phase2_summary.json"]
+    args: ["/opt/chipsystemsim-distributed/ns3_phase2_runner.py", "--bench", "../bench.txt", "--delay-info", "../delayInfo.txt", "--topology", "../topology/mesh_6_6_flit_4.gv", "--nodes", "36", "--cycle-ns", "1", "--flit-bytes", "32", "--link-rate", "128Gbps", "--link-delay-ns", "1", "--queue-packets", "100000", "--metrics-csv", "../ns3_phase2_metrics.csv", "--summary-json", "../ns3_phase2_summary.json"]
     log: "ns3_phase2.log"
     is_to_stdout: true
     is_to_stdout: false

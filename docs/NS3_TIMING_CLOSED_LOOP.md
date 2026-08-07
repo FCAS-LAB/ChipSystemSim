@@ -47,8 +47,9 @@ src_cycle src_node dst_node descriptor delay_count delay_0 delay_1 [...]
 | 链路带宽 | 128 Gbps | 每条拓扑边的 ns-3 点到点速率 |
 | 单跳传播延迟 | 1 ns | 每条拓扑边的传播时延 |
 | UDP 分段上限 | 1400 B | 将一个 LEGOSim 多 flit 事务分段，保持队列竞争可见 |
+| 设备发送队列 | 100,000 packets | 保持 PopNet 的无丢包时序语义；队列竞争只改变完成 cycle，不丢弃 LEGOSim 事务 |
 
-这些是明确、可调整的网络模型参数，不是 Docker `tc netem` 的实际延迟。修改原始 MLP 生成命令时可传入 `--ns3-cycle-ns`、`--ns3-link-rate` 与 `--ns3-link-delay-ns`；生成的 YAML 会记录实际值。
+这些是明确、可调整的网络模型参数，不是 Docker `tc netem` 的实际延迟。修改原始 MLP 生成命令时可传入 `--ns3-cycle-ns`、`--ns3-link-rate`、`--ns3-link-delay-ns` 与 `--ns3-queue-packets`；生成的 YAML 会记录实际值。
 
 ## 构建
 

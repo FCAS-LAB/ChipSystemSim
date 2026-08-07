@@ -197,7 +197,7 @@ class PhaseTwoSimulator {
     PhaseTwoSimulator(std::vector<BenchRecord> bench, std::vector<std::pair<uint32_t, uint32_t>> edges,
                       uint32_t nodes, uint64_t cycle_ns, uint64_t flit_bytes,
                       uint64_t max_datagram_bytes, const std::string& link_rate,
-                      uint64_t link_delay_ns)
+                      uint64_t link_delay_ns, uint64_t queue_packets)
         : cycle_ns_(cycle_ns),
           flit_bytes_(flit_bytes),
           max_datagram_bytes_(max_datagram_bytes),
@@ -214,6 +214,8 @@ class PhaseTwoSimulator {
         point_to_point.SetDeviceAttribute("DataRate", DataRateValue(DataRate(link_rate_)));
         point_to_point.SetChannelAttribute("Delay", TimeValue(NanoSeconds(link_delay_ns_)));
         point_to_point.SetDeviceAttribute("Mtu", UintegerValue(static_cast<uint32_t>(max_datagram_bytes_ + 128)));
+        point_to_point.SetQueue("ns3::DropTailQueue<Packet>", "MaxSize",
+                                QueueSizeValue(QueueSize(std::to_string(queue_packets) + "p")));
 
         node_addresses_.resize(nodes);
         uint32_t subnet = 0;
@@ -530,6 +532,7 @@ void PrintUsage(const char* program) {
               << "  --link-rate RATE         ns-3 point-to-point rate (default: 128Gbps)\n"
               << "  --link-delay-ns N        propagation delay per topology link (default: 1)\n"
               << "  --max-datagram-bytes N   UDP segment payload for a bench transaction (default: 1400)\n"
+              << "  --queue-packets N        maximum packets queued per topology link (default: 100000)\n"
               << "  --metrics-csv PATH       per-transaction timing records\n"
               << "  --summary-json PATH      aggregate timing summary\n";
 }
@@ -549,6 +552,7 @@ int main(int argc, char* argv[]) {
         uint64_t flit_bytes = 32;
         uint64_t link_delay_ns = 1;
         uint64_t max_datagram_bytes = 1400;
+        uint64_t queue_packets = 100000;
 
         for (int index = 1; index < argc; ++index) {
             const std::string argument = argv[index];
@@ -576,6 +580,8 @@ int main(int argc, char* argv[]) {
                 link_delay_ns = ParsePositive(require_value(argument), argument);
             } else if (argument == "--max-datagram-bytes") {
                 max_datagram_bytes = ParsePositive(require_value(argument), argument);
+            } else if (argument == "--queue-packets") {
+                queue_packets = ParsePositive(require_value(argument), argument);
             } else if (argument == "--metrics-csv") {
                 metrics_csv_path = require_value(argument);
             } else if (argument == "--summary-json") {
@@ -598,7 +604,7 @@ int main(int argc, char* argv[]) {
         const std::vector<BenchRecord> bench = ReadBench(bench_path);
         const std::vector<std::pair<uint32_t, uint32_t>> edges = ReadTopology(topology_path);
         PhaseTwoSimulator simulator(bench, edges, nodes, cycle_ns, flit_bytes, max_datagram_bytes, link_rate,
-                                   link_delay_ns);
+                                   link_delay_ns, queue_packets);
         simulator.Run();
         simulator.WriteDelayInfo(delay_info_path);
         if (!metrics_csv_path.empty()) {
