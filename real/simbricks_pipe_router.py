@@ -97,6 +97,14 @@ class Router:
             operation_finished_ns = monotonic_time_ns()
             operation_finished_unix_ns = unix_time_ns()
             elapsed_ns = operation_finished_ns - operation_started_ns
+            source_physical_slot = self.physical_slots.get(self.slot, 0)
+            peer_physical_slot = self.physical_slots.get(peer, 0)
+            if peer == self.slot:
+                transport_scope = "same_logical_worker"
+            elif source_physical_slot == peer_physical_slot:
+                transport_scope = "cross_legosim_same_physical_host"
+            else:
+                transport_scope = "cross_physical_host"
             # Emit one machine-readable record per completed native PipeComm
             # operation.  A cross-slot write measures the time for this router
             # to submit its payload through the local BaseIf gateway. A read's
@@ -107,8 +115,14 @@ class Router:
                 "bytes": byte_count,
                 "source_slot": self.slot,
                 "peer_slot": peer,
-                "cross_node": self.physical_slots.get(peer, peer)
-                != self.physical_slots.get(self.slot, self.slot),
+                "source_physical_slot": source_physical_slot,
+                "peer_physical_slot": peer_physical_slot,
+                "transport_scope": transport_scope,
+                "cross_legosim": peer != self.slot,
+                "cross_physical_host": source_physical_slot != peer_physical_slot,
+                # Compatibility alias for old collectors.  A node here means
+                # a real physical deployment node, not a DinD worker slot.
+                "cross_node": source_physical_slot != peer_physical_slot,
                 # These timestamps make the blocking interval auditable within
                 # a router process. They are monotonic-clock values, so they
                 # must not be compared directly across different VMs.

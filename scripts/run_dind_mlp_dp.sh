@@ -6,6 +6,8 @@
 # always <prefix>-0; every other nested daemon is a Swarm worker.
 set -euo pipefail
 
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
 nodes=0
 prefix=""
 config_dir=""
@@ -120,6 +122,39 @@ grep -q 'End of Simulation' "$output_dir/coordinator.log" || {
   echo "missing natural-completion marker" >&2; exit 1;
 }
 
+# The coordinator's entrypoint snapshots the files that define the timing
+# closed loop before it exits.  Retrieve them before deleting the nested stack
+# so a result can prove both the Phase-1 communication trace and the Phase-2
+# feedback consumed by the following round.
+timing_artifacts="$output_dir/timing-artifacts"
+mkdir -p "$timing_artifacts"
+docker exec "$manager" docker cp "${coordinator_id}:/legosim-artifacts/." "$timing_artifacts"
+timing_run="$timing_artifacts/coordinator"
+[[ -f "$timing_run/manifest.txt" ]] || {
+  echo "coordinator timing artifact manifest is missing" >&2; exit 1;
+}
+final_phase1_bench_records=0
+[[ -f "$timing_run/bench.txt" ]] && final_phase1_bench_records=$(awk 'NF { count += 1 } END { print count + 0 }' "$timing_run/bench.txt")
+last_phase2_dir=$(find "$timing_run" -type f -name phase2_input_bench.txt -printf '%h\n' | sort -V | tail -n 1)
+phase2_bench_records=0
+phase2_delay_records=0
+if [[ -n "$last_phase2_dir" ]]; then
+  phase2_bench_records=$(awk 'NF { count += 1 } END { print count + 0 }' "$last_phase2_dir/phase2_input_bench.txt")
+  phase2_delay_records=$(awk 'NF { count += 1 } END { print count + 0 }' "$last_phase2_dir/phase2_delayInfo.txt")
+fi
+{
+  printf 'final_phase1_bench_records=%s\n' "$final_phase1_bench_records"
+  printf 'last_phase2_bench_records=%s\n' "$phase2_bench_records"
+  printf 'last_phase2_delay_records=%s\n' "$phase2_delay_records"
+  if ((phase2_bench_records > 0 && phase2_delay_records == 0)); then
+    printf 'timing_feedback=missing\n'
+  elif ((phase2_bench_records > 0)); then
+    printf 'timing_feedback=present\n'
+  else
+    printf 'timing_feedback=not_required\n'
+  fi
+} > "$output_dir/timing_feedback.txt"
+
 : > "$output_dir/transport.log"
 for slot in $(seq 0 $((nodes - 1))); do
   outer="${prefix}-${slot}"
@@ -128,64 +163,17 @@ for slot in $(seq 0 $((nodes - 1))); do
   done
 done
 
-python3 - "$output_dir/transport.log" "$output_dir/metrics.txt" <<'PY'
-import json
-import sys
-
-source, output = sys.argv[1:]
-keys = ("records", "bytes", "elapsed_ns", "sync_wait_ns", "writes", "reads")
-all_values = {key: 0 for key in keys}
-cross_values = {key: 0 for key in keys}
-# A sum of rank-local waits can exceed the coordinator wall-clock duration.
-# Keep the wall-clock union of cross-node reads separately: it measures how
-# long at least one process was blocked on a remote PipeComm producer. This is
-# the only synchronization duration that may safely be divided by the single
-# coordinator timing interval.
-cross_sync_intervals = []
-with open(source, encoding="utf-8", errors="replace") as handle:
-    for line in handle:
-        if not line.startswith("pipe-metric:"):
-            continue
-        record = json.loads(line.split(":", 1)[1])
-        targets = [all_values]
-        if record.get("cross_node"):
-            targets.append(cross_values)
-        for values in targets:
-            values["records"] += 1
-            values["bytes"] += int(record.get("bytes", 0))
-            values["elapsed_ns"] += int(record.get("elapsed_ns", 0))
-            values["sync_wait_ns"] += int(record.get("synchronization_wait_ns", 0))
-            values["writes"] += record.get("operation") == "W"
-            values["reads"] += record.get("operation") == "R"
-        if record.get("cross_node") and record.get("operation") == "R":
-            started = record.get("started_unix_ns")
-            finished = record.get("finished_unix_ns")
-            if isinstance(started, int) and isinstance(finished, int) and finished >= started:
-                cross_sync_intervals.append((started, finished))
-
-
-def interval_union_nanoseconds(intervals):
-    """Return the wall-clock union of timestamped blocking intervals."""
-    if not intervals:
-        return 0
-    total = 0
-    current_start, current_finish = sorted(intervals)[0]
-    for started, finished in sorted(intervals)[1:]:
-        if started <= current_finish:
-            current_finish = max(current_finish, finished)
-            continue
-        total += current_finish - current_start
-        current_start, current_finish = started, finished
-    return total + current_finish - current_start
-
-
-cross_sync_wall_union_ns = interval_union_nanoseconds(cross_sync_intervals)
-with open(output, "w", encoding="utf-8") as handle:
-    for name, values in (("all", all_values), ("cross", cross_values)):
-        for key in keys:
-            handle.write(f"{name}_{key}={values[key]}\n")
-    handle.write(f"cross_sync_wall_union_ns={cross_sync_wall_union_ns}\n")
-    handle.write(f"cross_sync_wall_interval_count={len(cross_sync_intervals)}\n")
-PY
+ns3_metrics=""
+[[ -n "$last_phase2_dir" && -f "$last_phase2_dir/phase2_metrics.csv" ]] && \
+  ns3_metrics="$last_phase2_dir/phase2_metrics.csv"
+collector_args=(
+  "$script_dir/collect_timing_metrics.py"
+  --transport-log "$output_dir/transport.log"
+  --output "$output_dir/metrics.txt"
+)
+if [[ -n "$ns3_metrics" ]]; then
+  collector_args+=(--ns3-metrics "$ns3_metrics")
+fi
+python3 "${collector_args[@]}"
 
 printf 'completed stack=%s output=%s\n' "$stack" "$output_dir"

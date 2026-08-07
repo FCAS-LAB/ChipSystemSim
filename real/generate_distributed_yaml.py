@@ -22,6 +22,14 @@ def main() -> None:
                         help="file or glob copied into the worker run root before every phase-one spawn")
     parser.add_argument("--remote-phase2", action="store_true",
                         help="run phase-two PopNet on its placement worker and stage its generated inputs")
+    parser.add_argument("--phase2-backend", choices=("popnet", "ns3"), default="popnet",
+                        help="retain upstream PopNet or replace it with the ns-3 bench/delayInfo adapter")
+    parser.add_argument("--ns3-cycle-ns", type=int, default=1,
+                        help="nanoseconds represented by one Phase-2 cycle when --phase2-backend=ns3")
+    parser.add_argument("--ns3-link-rate", default="128Gbps",
+                        help="ns-3 point-to-point link rate when --phase2-backend=ns3")
+    parser.add_argument("--ns3-link-delay-ns", type=int, default=1,
+                        help="ns-3 propagation delay per topology edge when --phase2-backend=ns3")
     parser.add_argument("--gdb-process-index", type=int,
                         help="run exactly one phase-one process under batch gdb and print all thread backtraces")
     parser.add_argument("--sniper-cores", type=int,
@@ -39,6 +47,10 @@ def main() -> None:
         raise ValueError("--gpgpu-max-completed-cta must be positive")
     if arguments.gpgpu_max_instructions is not None and arguments.gpgpu_max_instructions < 1:
         raise ValueError("--gpgpu-max-instructions must be positive")
+    if arguments.ns3_cycle_ns < 1 or arguments.ns3_link_delay_ns < 1:
+        raise ValueError("ns-3 timing parameters must be positive")
+    if arguments.remote_phase2 and arguments.phase2_backend == "ns3":
+        raise ValueError("ns-3 Phase 2 must remain coordinator-local so delayInfo is available to the next round")
     config = yaml.safe_load(arguments.source_yaml.read_text(encoding="utf-8"))
     placement = json.loads(arguments.placement.read_text(encoding="utf-8"))
     placements_by_phase = {
@@ -120,6 +132,32 @@ def main() -> None:
         process.pop("pre_copy", None)
         if arguments.stream_output:
             process["is_to_stdout"] = True
+    if arguments.phase2_backend == "ns3":
+        for process in config.get("phase2", []):
+            original_args = list(process.get("args", []))
+            try:
+                node_count = str(original_args[original_args.index("-A") + 1])
+                flit_count = int(original_args[original_args.index("-F") + 1])
+                topology = str(original_args[original_args.index("-G") + 1])
+            except (ValueError, IndexError) as error:
+                raise ValueError("Phase-2 PopNet arguments must contain -A, -F and -G") from error
+            if flit_count < 1:
+                raise ValueError("Phase-2 flit count must be positive")
+            process["cmd"] = "python3"
+            process["args"] = [
+                "/opt/chipsystemsim-distributed/ns3_phase2_runner.py",
+                "--bench", "../bench.txt", "--delay-info", "../delayInfo.txt",
+                "--topology", topology, "--nodes", node_count,
+                "--cycle-ns", str(arguments.ns3_cycle_ns),
+                "--flit-bytes", str(flit_count * 8),
+                "--link-rate", arguments.ns3_link_rate,
+                "--link-delay-ns", str(arguments.ns3_link_delay_ns),
+                "--metrics-csv", "../ns3_phase2_metrics.csv",
+                "--summary-json", "../ns3_phase2_summary.json",
+            ]
+            process["log"] = "ns3_phase2.log"
+            process["is_to_stdout"] = True
+
     for index, process in enumerate(config["phase1"]):
         wrap_process(process, "phase1", index)
     if arguments.remote_phase2:

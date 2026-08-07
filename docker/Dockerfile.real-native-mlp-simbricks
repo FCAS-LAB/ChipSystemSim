@@ -6,6 +6,9 @@
 ARG BASE_IMAGE=chipsystemsim:mlp-dp-8ranks-v12-iterable
 FROM ${BASE_IMAGE}
 
+ARG NS3_REPOSITORY=https://github.com/simbricks/ns-3.git
+ARG NS3_REVISION=feb1f92eb9e71b129d5ae4aa09e4484c1554cc51
+
 COPY third_party/simbricks /opt/simbricks
 # MLP includes <nlohmann/json.hpp>, while its upstream makefile omits a local
 # include path and Ubuntu 18.04 has no nlohmann-json3-dev package.  Preserve
@@ -16,7 +19,10 @@ COPY third_party/tasks-vgg13 /opt/legosim/tasks-vgg13
 COPY real/simbricks_pipe_gateway.cc real/simbricks_pipe_protocol.h \
      real/process_proxy.py real/simbricks_worker_supervisor.py \
      real/patch_mlp_bounded_iterations.py real/patch_mlp_mnsim_runtime.py \
+     real/ns3_phase2.cc real/ns3_phase2_runner.py \
      /opt/chipsystemsim-distributed/
+COPY real/entrypoint.sh /usr/local/bin/legosim-run
+RUN chmod 0755 /usr/local/bin/legosim-run
 
 # Rebuild socket transport in the container to avoid host-GLIBC leakage, then
 # rebuild the upstream MLP CUDA/CPU/DSA/MNSIM artifacts.  The bounded-loop patch
@@ -45,3 +51,19 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
       /usr/bin/python3 /opt/chipsystemsim-distributed/patch_mlp_mnsim_runtime.py; \
       make -C /opt/legosim/artifact/MLP clean_all; \
       make -C /opt/legosim/artifact/MLP NVCC="nvcc -ccbin /usr/bin/g++"'
+
+# Build a coordinator-local ns-3 Phase-2 adapter.  Only generic ns-3 modules
+# are enabled: LEGOSim feeds this model with bench.txt rather than emulating a
+# SimBricks NIC/device endpoint.
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      git cmake ninja-build libboost-all-dev libsqlite3-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    git clone "$NS3_REPOSITORY" /opt/ns3 && \
+    git -C /opt/ns3 checkout --detach "$NS3_REVISION" && \
+    cp /opt/chipsystemsim-distributed/ns3_phase2.cc /opt/ns3/scratch/ns3_phase2.cc && \
+    cd /opt/ns3 && \
+    USER=ns3 ./ns3 configure --disable-examples --disable-tests \
+      --enable-modules=core,network,internet,point-to-point,applications && \
+    USER=ns3 ./ns3 build ns3_phase2 -j 2 && \
+    ns3_phase2_binary=$(find /opt/ns3/build/scratch -maxdepth 1 -type f -name '*-ns3_phase2-*' -print -quit) && \
+    test -n "$ns3_phase2_binary" && ln -s "$ns3_phase2_binary" /usr/local/bin/ns3-phase2

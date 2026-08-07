@@ -77,7 +77,16 @@ def main() -> None:
             "command": [image_yaml_path, "-w", str(arguments.topology_width), "-f", str(arguments.flit_size)],
             "configs": [{"source": "workload", "target": image_yaml_path, "mode": 0o444}],
             "networks": {"chipsystemsim": {"aliases": ["coordinator"]}},
-            "environment": {"LEGOSIM_WORKER_READY_TIMEOUT_SECONDS": str(arguments.worker_ready_timeout)},
+            "environment": {
+                "LEGOSIM_WORKER_READY_TIMEOUT_SECONDS": str(arguments.worker_ready_timeout),
+                # Phase-1 bench and Phase-2 delayInfo snapshots are captured
+                # by legosim-run on this dedicated volume.  Worker containers
+                # intentionally do not mount it: PipeComm remains functional
+                # data transport rather than a timing-artifact channel.
+                "LEGOSIM_ARTIFACT_DIR": "/legosim-artifacts",
+                "LEGOSIM_ARTIFACT_RUN_ID": "coordinator",
+            },
+            "volumes": ["timing-artifacts:/legosim-artifacts"],
             "deploy": {"placement": {"constraints": ["node.role == manager"]}, "restart_policy": {"condition": "none"}},
         },
     }
@@ -125,6 +134,7 @@ def main() -> None:
             "routing": {"file": str(arguments.routing.resolve())},
         },
         "networks": {"chipsystemsim": {"driver": "overlay", "attachable": True}},
+        "volumes": {"timing-artifacts": {}},
     }
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_text(yaml.safe_dump(stack, sort_keys=False), encoding="utf-8")

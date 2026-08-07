@@ -66,6 +66,7 @@ def main() -> None:
             "--source-yaml", str(UPSTREAM_MLP), "--placement", str(placement),
             "--output", str(workload), "--benchmark-root", "/opt/legosim/artifact/MLP",
             "--sniper-cores", "1", "--sniper-maxthreads", "1",
+            "--phase2-backend", "ns3",
         ]
         if arguments.stream_output:
             yaml_command.append("--stream-output")

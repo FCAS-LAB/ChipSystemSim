@@ -6,6 +6,12 @@
 ARG BASE_IMAGE=chipsystemsim:native-mlp-simbricks-v30
 FROM ${BASE_IMAGE}
 
+# Pin the ns-3 source used by the Phase-2 trace adapter.  It is fetched only
+# while building an image; neither functional PipeComm traffic nor benchmark
+# input data is fetched at runtime.
+ARG NS3_REPOSITORY=https://github.com/simbricks/ns-3.git
+ARG NS3_REVISION=feb1f92eb9e71b129d5ae4aa09e4484c1554cc51
+
 COPY real/mlp_dp_cpu.cpp real/mlp_dp_gpu.cu real/mlp_dp_makefile real/mlp_dp.yml \
      /opt/legosim/artifact/MLP_DP/
 COPY third_party/simbricks /opt/simbricks
@@ -16,6 +22,7 @@ COPY real/simbricks_pipe_gateway.cc real/simbricks_pipe_protocol.h /opt/chipsyst
 # remains self-contained when a worker is scheduled on another logical node.
 COPY real/worker.py real/process_proxy.py real/simbricks_worker_supervisor.py \
      real/simbricks_pipe_router.py real/generate_swarm_stack.py \
+     real/ns3_phase2.cc real/ns3_phase2_runner.py \
      /opt/chipsystemsim-distributed/
 COPY real/entrypoint.sh /usr/local/bin/legosim-run
 RUN chmod 0755 /usr/local/bin/legosim-run
@@ -26,6 +33,24 @@ RUN make -C /opt/simbricks dist/sockets/net_sockets && \
     g++ -O3 -std=gnu++17 -I/opt/simbricks/lib -I/opt/simbricks \
       /opt/chipsystemsim-distributed/simbricks_pipe_gateway.cc /tmp/simbricks-base-if.o \
       -o /usr/local/bin/simbricks-pipe-gateway -lpthread
+
+# The SimBricks ns-3 branch additionally contains full-system NetIf modules.
+# This Phase-2 adapter intentionally builds only the generic ns-3 modules it
+# uses (core/network/internet/point-to-point/applications): LEGOSim has no
+# NIC/device model to attach to those NetIf interfaces.  SimBricks BaseIf
+# remains the separate functional PipeComm transport built above.
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      git cmake ninja-build libboost-all-dev libsqlite3-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    git clone "$NS3_REPOSITORY" /opt/ns3 && \
+    git -C /opt/ns3 checkout --detach "$NS3_REVISION" && \
+    cp /opt/chipsystemsim-distributed/ns3_phase2.cc /opt/ns3/scratch/ns3_phase2.cc && \
+    cd /opt/ns3 && \
+    USER=ns3 ./ns3 configure --disable-examples --disable-tests \
+      --enable-modules=core,network,internet,point-to-point,applications && \
+    USER=ns3 ./ns3 build ns3_phase2 -j 2 && \
+    ns3_phase2_binary=$(find /opt/ns3/build/scratch -maxdepth 1 -type f -name '*-ns3_phase2-*' -print -quit) && \
+    test -n "$ns3_phase2_binary" && ln -s "$ns3_phase2_binary" /usr/local/bin/ns3-phase2
 
 RUN /bin/bash -lc 'set -euo pipefail; \
     export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=${CUDA_INSTALL_PATH:-/usr}; \

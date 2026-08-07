@@ -1,5 +1,7 @@
 # ChipSystemSim：LEGOSim PipeComm over SimBricks BaseIf
 
+> 当前原生路径已新增 **Phase 1 `bench.txt` → ns-3 → `delayInfo.txt` → 下一轮 `SYNC`** 的时序闭环；功能 PipeComm/SimBricks BaseIf 仍保持独立。完整边界、参数和验证条件见 [docs/NS3_TIMING_CLOSED_LOOP.md](docs/NS3_TIMING_CLOSED_LOOP.md)。
+
 本项目在开源 **LEGOSim** 和 **SimBricks** 的基础上，将 LEGOSim phase-1 进程的
 `PipeComm` 跨节点消息接入 SimBricks `BaseIf`/`net_sockets`，并以单机 DinD +
 Docker Swarm 部署可复现的多逻辑节点 MLP 数据并行实验。
