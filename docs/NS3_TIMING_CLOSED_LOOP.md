@@ -114,6 +114,8 @@ find /mnt/large-disk/results/mlp-ns3-n1/timing-artifacts/coordinator \
 | `cross_legosim_*` | 主机 wall-clock ns | 不同逻辑 LEGOSim worker 之间的功能 PipeComm 操作；在单机 DinD 中仍属于同一物理机。 |
 | `cross_physical_host_*` | 主机 wall-clock ns | 仅当 routing 配置将两个 worker 标为不同物理 host 时计入。单机 DinD 正确结果为零。 |
 
+其中，`ns3_payload_bytes` 是所有 Phase 2 trace（包含特殊控制事务）的总载荷字节数；`ns3_normal_payload_bytes` 仅为普通 `WRITE/READ` 事务。与时序推进有关的 `ns3_normal_*_cycles` 均只统计后者，避免把 barrier/lock 的四段协议时延错误混入普通数据读写。
+
 对于 wall-clock 同步比，只有 `*_sync_wall_union_ns / coordinator wall-clock` 可以形成 0–100% 的并集占比；不要使用各 router 的 `sync_wait_ns` 求和除以总时长，因为并行 rank 的等待会重叠。
 
 `scripts/summarize_dind_mlp_dp.py` 会将这些字段导出为 CSV 中的 `cross_legosim_*`、`cross_physical_host_*` 和 `ns3_normal_*` 列。单机 DinD 的 `cross_physical_host_*` 应为零；若非零，说明生成 routing 时显式把逻辑 worker 映射到了多个物理 host。

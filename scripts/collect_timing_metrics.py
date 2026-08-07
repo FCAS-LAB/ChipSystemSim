@@ -106,6 +106,7 @@ def collect_ns3_metrics(path: Optional[Path]) -> Dict[str, int]:
         "ns3_normal_records": 0,
         "ns3_special_records": 0,
         "ns3_payload_bytes": 0,
+        "ns3_normal_payload_bytes": 0,
         "ns3_normal_source_sync_advance_cycles": 0,
         "ns3_normal_destination_network_delay_cycles": 0,
         "ns3_normal_destination_sync_block_cycles": 0,
@@ -115,11 +116,16 @@ def collect_ns3_metrics(path: Optional[Path]) -> Dict[str, int]:
     with path.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             defaults["ns3_records"] += 1
+            payload_bytes = int(row["payload_bytes"])
+            # Keep this total aligned with ns3_phase2.cc's JSON summary.  The
+            # special records are control operations, so their delay values
+            # are deliberately not included in the normal READ/WRITE totals.
+            defaults["ns3_payload_bytes"] += payload_bytes
             if row["special"] == "1":
                 defaults["ns3_special_records"] += 1
                 continue
             defaults["ns3_normal_records"] += 1
-            defaults["ns3_payload_bytes"] += int(row["payload_bytes"])
+            defaults["ns3_normal_payload_bytes"] += payload_bytes
             defaults["ns3_normal_source_sync_advance_cycles"] += int(row["source_sync_advance_cycles"])
             defaults["ns3_normal_destination_network_delay_cycles"] += int(row["destination_network_delay_cycles"])
             defaults["ns3_normal_destination_sync_block_cycles"] += int(row["destination_sync_block_cycles"])
