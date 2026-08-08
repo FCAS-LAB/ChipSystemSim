@@ -30,6 +30,11 @@ CPU, GPU(0,1), GPU(0,2), GPU(1,1), GPU(1,2), DSA, MNSIM
 该策略最小化高权重 CPU↔GPU 边的跨节点数量；它不保证总时间下降，且不改变原始 MLP 的计算
 语义、进程数或通信顺序。
 
+为让 7 个 Phase-1 simlet 在 2/4/8 个 worker 上形成确定的近均衡分箱，placement JSON 保留了
+上游 PopNet 的**虚拟第 8 个槽位**。启用 ns-3 后该条目不会被 worker 启动；Phase 2 始终在
+coordinator 本地执行。这个虚拟槽位只决定 Phase-1 分箱边界，例如 2 节点时实际 Phase-1 数为
+4/3、4 节点时为 2/2/2/1、8 节点时为 1/1/1/1/1/1/1/0。
+
 ## 生成配置
 
 ```bash

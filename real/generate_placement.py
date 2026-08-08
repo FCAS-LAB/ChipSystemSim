@@ -167,17 +167,17 @@ def main() -> None:
         source_processes = rank_aware_mlp_order(source_processes, arguments.nodes)
     placement: list[dict[str, int | str]] = []
     for global_index, (phase, process_index, process) in enumerate(source_processes):
-            node_slot = global_index // processes_per_node
-            record: dict[str, int | str | list[int]] = {
-                "phase": phase,
-                "process_index": process_index,
-                "node_slot": node_slot,
-                "node_label": f"chipsystemsim.node.{node_slot}",
-            }
-            coordinates = process_coordinates(process, phase, process_index)
-            if coordinates is not None:
-                record["coordinates"] = coordinates
-            placement.append(record)
+        node_slot = global_index // processes_per_node
+        record: dict[str, int | str | list[int]] = {
+            "phase": phase,
+            "process_index": process_index,
+            "node_slot": node_slot,
+            "node_label": f"chipsystemsim.node.{node_slot}",
+        }
+        coordinates = process_coordinates(process, phase, process_index)
+        if coordinates is not None:
+            record["coordinates"] = coordinates
+        placement.append(record)
 
     output = {
         "workload": workload_name,
