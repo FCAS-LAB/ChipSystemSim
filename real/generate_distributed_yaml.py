@@ -145,6 +145,17 @@ def main() -> None:
                 raise ValueError("Phase-2 PopNet arguments must contain -A, -F and -G") from error
             if flit_count < 1:
                 raise ValueError("Phase-2 flit count must be positive")
+            # Phase 2 remains in the coordinator container. Upstream PopNet
+            # resolves ``../topology/...`` from its per-process directory only
+            # when launched from the benchmark tree; the distributed
+            # coordinator instead starts in /opt/legosim. Resolve that input
+            # against the explicit in-image benchmark root so ns-3 sees the
+            # same topology file without relying on an undeclared working
+            # directory layout.
+            if topology.startswith("../topology/") and arguments.benchmark_root:
+                topology = str(
+                    Path(arguments.benchmark_root) / "topology" / Path(topology).name
+                )
             process["cmd"] = "python3"
             process["args"] = [
                 "/opt/chipsystemsim-distributed/ns3_phase2_runner.py",

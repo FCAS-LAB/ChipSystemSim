@@ -128,7 +128,12 @@ grep -q 'End of Simulation' "$output_dir/coordinator.log" || {
 # feedback consumed by the following round.
 timing_artifacts="$output_dir/timing-artifacts"
 mkdir -p "$timing_artifacts"
-docker exec "$manager" docker cp "${coordinator_id}:/legosim-artifacts/." "$timing_artifacts"
+# The coordinator lives in Docker nested inside the manager DinD container,
+# whereas output_dir exists on the outer host. Stream docker cp's tar archive
+# across that boundary instead of passing an outer-host path to the nested
+# daemon (which would be interpreted inside the manager container).
+docker exec "$manager" docker cp "${coordinator_id}:/legosim-artifacts/." - | \
+  tar -C "$timing_artifacts" -xf -
 timing_run="$timing_artifacts/coordinator"
 [[ -f "$timing_run/manifest.txt" ]] || {
   echo "coordinator timing artifact manifest is missing" >&2; exit 1;
