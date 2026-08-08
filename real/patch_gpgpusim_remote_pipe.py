@@ -60,6 +60,26 @@ def patch_source(source):
         return cudaErrorUnknown;
     }''',
         "receiveMessage read")
+    # ``receiveMessage`` allocates an array. The original LEGOSim patch used
+    # scalar ``delete`` at the end of the function, which is undefined
+    # behaviour and can terminate a GPU simlet after its first successful
+    # PipeComm receive. Keep this transformation independent of the remote
+    # transport replacement so it also repairs already-overlaid sources.
+    source = replace_once(
+        source,
+        '    delete interdata;\n\n    return cudaSuccess;',
+        '    delete[] interdata;\n\n    return cudaSuccess;',
+        "receiveMessage array cleanup")
+    # CUDA's triple-chevron launch stub calls this ABI entry point and checks
+    # its unsigned result. The LEGOSim snapshot invoked the internal helper
+    # but fell off a non-void function. On optimized builds that undefined
+    # return value can corrupt the launch path immediately after a successful
+    # PipeComm receive. Return the helper's CUDA status explicitly.
+    source = replace_once(
+        source,
+        '    cudaConfigureCallInternal(gridDim, blockDim, sharedMem, stream);\n}\n\ncudaError_t CUDARTAPI __cudaPopCallConfiguration',
+        '    return cudaConfigureCallInternal(gridDim, blockDim, sharedMem, stream);\n}\n\ncudaError_t CUDARTAPI __cudaPopCallConfiguration',
+        "__cudaPushCallConfiguration return")
     return source
 
 

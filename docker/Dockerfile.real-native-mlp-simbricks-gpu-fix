@@ -1,0 +1,25 @@
+# Rebuild only GPGPU-Sim's CUDA runtime after repairing the upstream
+# receiveMessage array cleanup. The preceding ns-3 image already contains the
+# complete native MLP graph, SimBricks PipeComm transport and Phase-2 adapter.
+ARG BASE_IMAGE=chipsystemsim:native-mlp-ns3-v3
+FROM ${BASE_IMAGE}
+
+COPY real/patch_gpgpusim_remote_pipe.py /opt/chipsystemsim-distributed/patch_gpgpusim_remote_pipe.py
+
+# cuda_runtime_api.cc is compiled into libcudart.so. Rebuild that library after
+# applying the idempotent transport-and-cleanup patch; MLP's PTX executable is
+# dynamically linked to this runtime, so it need not be regenerated.
+RUN /bin/bash -lc 'set -euo pipefail; \
+      export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=${CUDA_INSTALL_PATH:-/usr}; \
+      set +u; source /opt/legosim/gpgpu-sim/setup_environment; set -u; \
+      /usr/bin/python3 /opt/chipsystemsim-distributed/patch_gpgpusim_remote_pipe.py \
+          /opt/legosim/gpgpu-sim/libcuda/cuda_runtime_api.cc; \
+      grep -Fq "delete[] interdata;" /opt/legosim/gpgpu-sim/libcuda/cuda_runtime_api.cc; \
+      ! grep -Fq "delete interdata;" /opt/legosim/gpgpu-sim/libcuda/cuda_runtime_api.cc; \
+      runtime_object_dir=$(dirname "$(find /opt/legosim/gpgpu-sim/build -type f \
+          -path "*/libcuda/cuda_runtime_api.o" -print -quit)"); \
+      runtime_library=$(find /opt/legosim/gpgpu-sim/lib -type f -name libcudart.so -print -quit); \
+      test -n "$runtime_object_dir" && test -n "$runtime_library"; \
+      rm -rf "$runtime_object_dir"; \
+      rm -f "$runtime_library"; \
+      make -C /opt/legosim/gpgpu-sim gpgpusim -j"$(nproc)"'
