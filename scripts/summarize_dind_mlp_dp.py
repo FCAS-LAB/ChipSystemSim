@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize natural-completion MLP-DP DinD runs with wall-clock sync time."""
+"""Summarize natural-completion LEGOSim DinD runs without mixing time domains."""
 from __future__ import annotations
 
 import argparse
@@ -72,23 +72,55 @@ def collect_run(run_directory: Path, nodes: int) -> Dict[str, object]:
     }
 
 
+def parse_explicit_run(value: str) -> tuple[int, Path]:
+    """Parse ``NODES=RESULT_DIRECTORY`` and reject ambiguous input early."""
+    node_text, separator, directory_text = value.partition("=")
+    if not separator or not node_text or not directory_text:
+        raise argparse.ArgumentTypeError(
+            "--run must use NODES=RESULT_DIRECTORY, for example 4=/data/nodes4"
+        )
+    try:
+        nodes = int(node_text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"invalid node count in --run: {node_text!r}") from error
+    if nodes <= 0:
+        raise argparse.ArgumentTypeError("--run node count must be positive")
+    return nodes, Path(directory_text)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Summarize 1/2/4/8-node MLP-DP DinD run directories."
+        description="Summarize natural-completion LEGOSim DinD run directories."
     )
-    parser.add_argument("--input-root", required=True, type=Path)
+    parser.add_argument("--input-root", type=Path,
+                        help="root used with --directory-pattern (legacy matrix layout)")
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--nodes", type=int, nargs="+", default=[1, 2, 4, 8],
                         choices=[1, 2, 4, 8])
     parser.add_argument("--directory-pattern", default="nodes{nodes}",
                         help="subdirectory pattern below input root (default: nodes{nodes})")
+    parser.add_argument("--run", action="append", type=parse_explicit_run,
+                        metavar="NODES=RESULT_DIRECTORY",
+                        help="explicit result directory; repeat for differently named runs")
     arguments = parser.parse_args()
 
-    rows = []
-    for nodes in arguments.nodes:
-        directory = arguments.input_root / arguments.directory_pattern.format(nodes=nodes)
-        rows.append(collect_run(directory, nodes))
+    if arguments.run and arguments.input_root:
+        parser.error("use either --run or --input-root/--directory-pattern, not both")
+    if arguments.run:
+        explicit_runs = arguments.run
+        node_counts = [nodes for nodes, _ in explicit_runs]
+        if len(set(node_counts)) != len(node_counts):
+            parser.error("each --run node count may be specified only once")
+        rows = [collect_run(directory, nodes) for nodes, directory in explicit_runs]
+    else:
+        if arguments.input_root is None:
+            parser.error("provide --run or --input-root")
+        rows = []
+        for nodes in arguments.nodes:
+            directory = arguments.input_root / arguments.directory_pattern.format(nodes=nodes)
+            rows.append(collect_run(directory, nodes))
 
+    rows.sort(key=lambda row: int(row["nodes"]))
     baseline = rows[0]["total_simulation_seconds"]
     for row in rows:
         row["speedup_vs_first_row"] = baseline / row["total_simulation_seconds"]

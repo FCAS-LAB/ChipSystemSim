@@ -134,6 +134,32 @@ find /mnt/large-disk/results/mlp-ns3-n1/timing-artifacts/coordinator \
 
 `scripts/summarize_dind_mlp_dp.py` 会将这些字段导出为 CSV 中的 `cross_legosim_*`、`cross_physical_host_*` 和 `ns3_normal_*` 列。单机 DinD 的 `cross_physical_host_*` 应为零；若非零，说明生成 routing 时显式把逻辑 worker 映射到了多个物理 host。
 
-## 已验证范围与未完成项
+当各节点数的结果目录不在同一父目录下时，可显式给出每个点，避免通过目录名推断节点数：
 
-在受限本机资源下，已验证 ns-3 adapter 的 C++ 编译、普通两段 delay、特殊四段 delay、以及同链路并发队列会产生不同的到达 cycle。尚未在本机完成 Docker DinD 的完整 MLP 自然结束运行：当前 WSL 发行版没有可用 Docker Engine。因此，在取得一份 `timing_feedback=present` 的 DinD 产物前，不应把任何历史 wall-clock 结果解释为已纳入 ns-3 通信 cycle 的性能结果。
+```bash
+python3 scripts/summarize_dind_mlp_dp.py \
+  --run 1=/mnt/large-disk/results/nodes1 \
+  --run 2=/mnt/large-disk/results/nodes2 \
+  --run 4=/mnt/large-disk/results/nodes4 \
+  --run 8=/mnt/large-disk/results/nodes8 \
+  --output /mnt/large-disk/results/ns3-matrix-summary.csv
+```
+
+汇总器会验证各点的 coordinator 正常退出和自然结束标记，再以 1 节点作为速度比基线。它不会把
+`cross_legosim_*` 改名为物理跨机指标。
+
+## 已验证范围与限制
+
+在具备 Docker Engine 的 Linux 服务器上，原始 MLP 已完成 1、2、4、8 个 DinD logical-worker
+配置的自然结束验证。每个成功点均同时满足 `timing_feedback=present`、104 条
+`bench.txt` 记录与 104 条 `delayInfo.txt` 记录对应，以及下一轮 Phase 1 实际加载 104 条
+延迟记录。因而这些点可以证明时序闭环被消费，而不只是 Phase-2 程序成功退出。
+
+各点的参数、自然结束时间、功能数据面指标及正确解读见
+[原始 MLP DinD 结果记录](RESULTS_NATIVE_MLP_NS3_DIND_20260808.md)。
+
+这些验证仍是**单台物理服务器上的 DinD/Swarm 逻辑多节点**：`cross_legosim_*` 表示跨
+LEGOSim worker 的功能通信；由于所有 worker 的 `worker_physical_slots` 都是 `0`，正确的
+`cross_physical_host_*` 为零。它不等价于真实多机网卡、交换机或 ns-3 NetIf 设备级建模，也
+不能用 PipeComm 的墙钟阻塞时间替代 ns-3 所反馈的模拟 cycle。真实物理多机结果需要把 worker
+映射到不同物理主机，并保持同一套 Phase-2 轨迹和回写校验。

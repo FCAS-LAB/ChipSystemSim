@@ -118,14 +118,18 @@ done
 remove_experiment() {
   docker ps -aq --filter "name=^/${prefix}-" | xargs -r docker rm -f >/dev/null
   docker network rm "$network" >/dev/null 2>&1 || true
-  # This directory is dedicated to this exact prefix.  It only contains
-  # nested Docker layers that become unreachable when the DinD nodes go away.
-  # DinD writes them as root, so clean through a short-lived root container
-  # rather than relying on the outer host user's filesystem permissions.
+  # Each DinD node uses a separate directory below dind_data_root.  A data root
+  # can be shared by several experiments, so remove only directories belonging
+  # to this prefix. DinD writes them as root, hence the short-lived root
+  # container rather than relying on the outer host user's permissions.
   if [[ -n "$dind_data_root" && -e "$dind_data_root" ]]; then
-    docker run --rm --mount "type=bind,src=${dind_data_root},dst=/dind-data" \
-      --entrypoint /bin/sh "$dind_image" -c 'rm -rf /dind-data/* 2>/dev/null || true'
-    rmdir "$dind_data_root" 2>/dev/null || true
+    for slot in $(seq 0 $((nodes - 1))); do
+      node_data_root="${dind_data_root}/${prefix}-${slot}"
+      [[ -e "$node_data_root" ]] || continue
+      docker run --rm --mount "type=bind,src=${node_data_root},dst=/dind-data" \
+        --entrypoint /bin/sh "$dind_image" -c 'rm -rf /dind-data/* 2>/dev/null || true'
+      rmdir "$node_data_root" 2>/dev/null || true
+    done
   fi
 }
 
