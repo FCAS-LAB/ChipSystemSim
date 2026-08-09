@@ -75,7 +75,13 @@ def main() -> None:
             "image": arguments.image,
             # This command is passed to the image's legosim-run entry point.
             "command": [image_yaml_path, "-w", str(arguments.topology_width), "-f", str(arguments.flit_size)],
-            "configs": [{"source": "workload", "target": image_yaml_path, "mode": 0o444}],
+            "configs": [
+                {"source": "workload", "target": image_yaml_path, "mode": 0o444},
+                # Only a counterfactual ns-3 Phase 2 reads this mapping. It
+                # is mounted for every coordinator so generated stacks have a
+                # stable, reproducible config layout.
+                {"source": "routing", "target": "/run/config/routing.json", "mode": 0o444},
+            ],
             "networks": {"chipsystemsim": {"aliases": ["coordinator"]}},
             "environment": {
                 "LEGOSIM_WORKER_READY_TIMEOUT_SECONDS": str(arguments.worker_ready_timeout),

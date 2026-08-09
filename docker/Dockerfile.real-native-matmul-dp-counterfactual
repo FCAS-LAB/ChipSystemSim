@@ -1,0 +1,15 @@
+# Rebuild only the coordinator-local ns-3 adapter on top of the validated
+# Matmul-DP runtime.  This keeps the CPU/GPU benchmark and functional PipeComm
+# path byte-for-byte identical while enabling the timing counterfactual.
+ARG BASE_IMAGE=chipsystemsim:native-matmul-dp-v3
+FROM ${BASE_IMAGE}
+
+COPY real/ns3_phase2.cc /opt/chipsystemsim-distributed/ns3_phase2.cc
+
+RUN set -eux; \
+    cp /opt/chipsystemsim-distributed/ns3_phase2.cc /opt/ns3/scratch/ns3_phase2.cc; \
+    cd /opt/ns3; \
+    USER=ns3 ./ns3 build ns3_phase2 -j 2; \
+    ns3_phase2_binary=$(find /opt/ns3/build/scratch -maxdepth 1 -type f -name '*-ns3_phase2-*' -print -quit); \
+    test -n "$ns3_phase2_binary"; \
+    ln -sf "$ns3_phase2_binary" /usr/local/bin/ns3-phase2

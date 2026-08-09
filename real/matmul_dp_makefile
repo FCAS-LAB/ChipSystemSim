@@ -1,0 +1,20 @@
+SIMULATOR_ROOT ?= /opt/legosim
+CUDA_TARGET := bin/matmul_dp_cu
+CPU_TARGET := bin/matmul_dp_c
+CXXFLAGS := -O2 -Wall -Wextra -Werror -I$(SIMULATOR_ROOT)/interchiplet/includes
+CUFLAGS := --compiler-options -Wall -I$(SIMULATOR_ROOT)/interchiplet/includes
+INTERCHIPLET_C_LIB := $(SIMULATOR_ROOT)/interchiplet/lib/libinterchiplet_c.a
+
+all: $(CPU_TARGET) $(CUDA_TARGET)
+
+bin:
+	mkdir -p $@
+
+$(CPU_TARGET): matmul_dp_cpu.cpp | bin
+	g++ $(CXXFLAGS) $< $(INTERCHIPLET_C_LIB) -o $@
+
+$(CUDA_TARGET): matmul_dp_gpu.cu | bin
+	nvcc $(CUFLAGS) -L$(SIMULATOR_ROOT)/gpgpu-sim/lib/$(GPGPUSIM_CONFIG) --cudart shared $< -o $@
+
+clean:
+	rm -rf bin

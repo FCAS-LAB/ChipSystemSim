@@ -132,7 +132,40 @@ find /mnt/large-disk/results/mlp-ns3-n1/timing-artifacts/coordinator \
 
 对于 wall-clock 同步比，只有 `*_sync_wall_union_ns / coordinator wall-clock` 可以形成 0–100% 的并集占比；不要使用各 router 的 `sync_wait_ns` 求和除以总时长，因为并行 rank 的等待会重叠。
 
+上述 `*_sync_wall_union_ns` 仅描述**端到端依赖等待**，其中仍包含生产者在发起 `WRITE` 前的 CPU/GPU 计算，不能称为“纯同步开销”。新版 router 会在每条 `pipe-metric` 记录 `pipe_name`；collector 以 FIFO 顺序配对同一消息的 `WRITE` 和 `READ`，并输出 `*_transport_exposed_sync_wall_union_ns`。每个已配对消息只计量 `[max(write_started, read_started), read_finished]`：生产者尚未提交数据前的计算等待、以及消费者尚未发起 `READ` 前的计算均被排除。以 `cross_legosim_transport_exposed_sync_wall_union_ns / coordinator wall-clock` 得到跨逻辑 LEGOSim 的纯传输/协议同步占比；真实多机部署还可使用更严格的 `cross_physical_host_*` 字段。`*_transport_unmatched_*` 必须为零，否则该次日志不适合报告该指标。
+
+该 wall-clock 指标仍不等同于 ns-3 cycle。ns-3 的纯时序网络量应单独报告 `ns3_normal_destination_network_delay_cycles`（网络到达延迟）以及 `ns3_normal_destination_sync_block_cycles`（暴露在目的端 `SYNC` 的 cycle），二者不得直接除以主机秒数。
+
 `scripts/summarize_dind_mlp_dp.py` 会将这些字段导出为 CSV 中的 `cross_legosim_*`、`cross_physical_host_*` 和 `ns3_normal_*` 列。单机 DinD 的 `cross_physical_host_*` 应为零；若非零，说明生成 routing 时显式把逻辑 worker 映射到了多个物理 host。
+
+## 跨 worker 反事实基线
+
+若问题是“跨 LEGOSim 时序同步使**应用关键路径**变慢了多少”，wall-clock PipeComm 指标不足以
+回答。应保持同一 workload、rank 切分、静态放置、功能 PipeComm 和 ns-3 拓扑，执行两组：
+
+1. **实际组**：正常 ns-3 产生 `delayInfo.txt`；
+2. **本地化基线**：仅对源、目的芯粒映射到不同 LEGOSim worker 的 trace，在 `delayInfo.txt`
+   中写入零时序延迟。
+
+最终从 coordinator 日志自然结束标记后的 `Benchmark elapses N cycle.` 读取收敛完成时间，并计算：
+
+\[
+\Delta T_{\mathrm{cross}} = T_{\mathrm{actual}} - T_{\mathrm{local\ baseline}},
+\qquad
+O_{\mathrm{cross}} = \Delta T_{\mathrm{cross}} / T_{\mathrm{actual}}.
+\]
+
+`real/ns3_phase2.cc` 的 `--localize-cross-worker-network` 必须与
+`--worker-routing /run/config/routing.json` 一同使用。它只改变下轮 Phase 1 消费的 ns-3
+时序反馈；ns-3 仍验证全部 trace，PipeComm/SimBricks BaseIf 的 payload 通路也仍然实际运行。
+每份 `phase2_summary.json` 记录
+`counterfactual_localize_cross_worker_network` 与
+`counterfactual_localized_cross_worker_records`，以防把未启用的基线误当作本地化实验。
+
+`scripts/generate_matmul_dp_dind_matrix.py --ns3-localize-cross-worker-network` 会生成对应配置；
+`scripts/run_matmul_dp_counterfactual_baseline.sh` 则以固定 32 GPU rank、每 DinD worker 8 vCPU/
+16 GiB 依次完成 1/2/4/8 节点基线。该比值是 **模拟 cycle 域的关键路径同步开销**，不等同于
+`cross_legosim_transport_exposed_sync_wall_union_ns / coordinator wall-clock` 的运行时协议开销占比。
 
 当各节点数的结果目录不在同一父目录下时，可显式给出每个点，避免通过目录名推断节点数：
 

@@ -17,6 +17,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <regex>
 #include <set>
@@ -158,6 +159,41 @@ std::vector<std::pair<uint32_t, uint32_t>> ReadTopology(const std::string& path)
     return {deduplicated.begin(), deduplicated.end()};
 }
 
+std::map<uint32_t, uint32_t> ReadWorkerRouting(const std::string& path, uint32_t nodes) {
+    std::ifstream input(path);
+    if (!input) {
+        throw std::runtime_error("cannot open worker routing: " + path);
+    }
+    const uint32_t width = static_cast<uint32_t>(std::sqrt(nodes));
+    if (width == 0 || width * width != nodes) {
+        throw std::runtime_error("counterfactual worker routing requires a square chiplet topology");
+    }
+    const std::string content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    // ``routing.json`` has a deliberately small stable schema. Reading the
+    // coordinate map directly avoids adding a JSON library to this standalone
+    // ns-3 adapter executable.
+    const std::regex coordinate_slot("\\\"([0-9]+),([0-9]+)\\\"\\s*:\\s*([0-9]+)");
+    std::map<uint32_t, uint32_t> slots;
+    for (std::sregex_iterator item(content.begin(), content.end(), coordinate_slot), end; item != end;
+         ++item) {
+        const uint32_t x = static_cast<uint32_t>(std::stoul((*item)[1].str()));
+        const uint32_t y = static_cast<uint32_t>(std::stoul((*item)[2].str()));
+        const uint32_t slot = static_cast<uint32_t>(std::stoul((*item)[3].str()));
+        if (x >= width || y >= width) {
+            throw std::runtime_error("worker routing contains a coordinate outside the chiplet topology");
+        }
+        const uint32_t node = y * width + x;
+        const auto inserted = slots.emplace(node, slot);
+        if (!inserted.second && inserted.first->second != slot) {
+            throw std::runtime_error("worker routing maps one chiplet to multiple workers");
+        }
+    }
+    if (slots.empty()) {
+        throw std::runtime_error("worker routing has no coordinate_to_worker_slot entries");
+    }
+    return slots;
+}
+
 std::vector<BenchRecord> ReadBench(const std::string& path) {
     std::ifstream input(path);
     if (!input) {
@@ -197,12 +233,16 @@ class PhaseTwoSimulator {
     PhaseTwoSimulator(std::vector<BenchRecord> bench, std::vector<std::pair<uint32_t, uint32_t>> edges,
                       uint32_t nodes, uint64_t cycle_ns, uint64_t flit_bytes,
                       uint64_t max_datagram_bytes, const std::string& link_rate,
-                      uint64_t link_delay_ns, uint64_t queue_packets)
+                      uint64_t link_delay_ns, uint64_t queue_packets,
+                      std::map<uint32_t, uint32_t> worker_slots,
+                      bool localize_cross_worker_network)
         : cycle_ns_(cycle_ns),
           flit_bytes_(flit_bytes),
           max_datagram_bytes_(max_datagram_bytes),
           link_rate_(link_rate),
-          link_delay_ns_(link_delay_ns) {
+          link_delay_ns_(link_delay_ns),
+          worker_slots_(std::move(worker_slots)),
+          localize_cross_worker_network_(localize_cross_worker_network) {
         if (nodes == 0) {
             throw std::runtime_error("--nodes must be positive");
         }
@@ -309,6 +349,7 @@ class PhaseTwoSimulator {
             throw std::runtime_error("cannot write delayInfo: " + path);
         }
         for (const TraceState& state : states_) {
+            const bool localized = IsLocalizedCrossWorker(state);
             const int64_t start_ns = static_cast<int64_t>(state.bench.source_cycle * cycle_ns_);
             const uint64_t forward_source_delay =
                 CeilNanosecondsToCycles(state.forward.transmit_finish_ns - start_ns, cycle_ns_);
@@ -316,6 +357,13 @@ class PhaseTwoSimulator {
                 CeilNanosecondsToCycles(state.forward.arrival_ns - start_ns, cycle_ns_);
             output << state.bench.source_cycle << ' ' << state.bench.source << ' ' << state.bench.destination
                    << ' ' << state.bench.descriptor << ' ';
+            if (localized) {
+                // This is a timing-only counterfactual. The original
+                // PipeComm transaction still runs, preserving data and
+                // protocol ordering, but it adds no simulated network delay.
+                output << (state.special ? "4 0 0 0 0\n" : "2 0 0\n");
+                continue;
+            }
             if (!state.special) {
                 output << 2 << ' ' << forward_source_delay << ' ' << forward_destination_delay << '\n';
                 continue;
@@ -340,31 +388,44 @@ class PhaseTwoSimulator {
         output << "trace_id,src_node,dst_node,model_dst_node,descriptor,special,flits,payload_bytes,"
                   "src_cycle,dst_cycle,forward_tx_finish_cycle,forward_arrival_cycle,"
                   "source_sync_advance_cycles,destination_network_delay_cycles,"
-                  "destination_sync_block_cycles,"
+                  "destination_sync_block_cycles,localized_cross_worker,"
                   "ack_tx_finish_cycle,ack_arrival_cycle\n";
         for (uint32_t id = 0; id < states_.size(); ++id) {
             const TraceState& state = states_[id];
+            const bool localized = IsLocalizedCrossWorker(state);
             const int64_t start_ns = static_cast<int64_t>(state.bench.source_cycle * cycle_ns_);
-            const uint64_t forward_tx_cycle = CeilNanosecondsToCycles(state.forward.transmit_finish_ns, cycle_ns_);
-            const uint64_t forward_arrival_cycle = CeilNanosecondsToCycles(state.forward.arrival_ns, cycle_ns_);
-            const uint64_t source_delay =
-                CeilNanosecondsToCycles(state.forward.transmit_finish_ns - start_ns, cycle_ns_);
-            const uint64_t destination_delay =
-                CeilNanosecondsToCycles(state.forward.arrival_ns - start_ns, cycle_ns_);
-            const uint64_t destination_block = state.bench.source_cycle + destination_delay >
-                                                       state.bench.destination_cycle
-                                                   ? state.bench.source_cycle + destination_delay -
-                                                         state.bench.destination_cycle
-                                                   : 0;
+            const uint64_t forward_tx_cycle = localized
+                                                  ? state.bench.source_cycle
+                                                  : CeilNanosecondsToCycles(state.forward.transmit_finish_ns, cycle_ns_);
+            const uint64_t forward_arrival_cycle = localized
+                                                       ? state.bench.source_cycle
+                                                       : CeilNanosecondsToCycles(state.forward.arrival_ns, cycle_ns_);
+            const uint64_t source_delay = localized
+                                              ? 0
+                                              : CeilNanosecondsToCycles(state.forward.transmit_finish_ns - start_ns,
+                                                                        cycle_ns_);
+            const uint64_t destination_delay = localized
+                                                   ? 0
+                                                   : CeilNanosecondsToCycles(state.forward.arrival_ns - start_ns,
+                                                                             cycle_ns_);
+            const uint64_t destination_block = localized
+                                                   ? 0
+                                                   : (state.bench.source_cycle + destination_delay >
+                                                              state.bench.destination_cycle
+                                                          ? state.bench.source_cycle + destination_delay -
+                                                                state.bench.destination_cycle
+                                                          : 0);
             output << id << ',' << state.bench.source << ',' << state.bench.destination << ','
                    << state.model_destination << ',' << state.bench.descriptor << ',' << state.special << ','
                    << state.bench.flits << ',' << state.bench.flits * flit_bytes_ << ','
                    << state.bench.source_cycle << ',' << state.bench.destination_cycle << ','
                    << forward_tx_cycle << ',' << forward_arrival_cycle << ',' << source_delay << ','
-                   << destination_delay << ',' << destination_block << ',';
+                   << destination_delay << ',' << destination_block << ',' << localized << ',';
             if (state.special) {
-                output << CeilNanosecondsToCycles(state.acknowledgement.transmit_finish_ns, cycle_ns_) << ','
-                       << CeilNanosecondsToCycles(state.acknowledgement.arrival_ns, cycle_ns_);
+                output << (localized ? 0 : CeilNanosecondsToCycles(state.acknowledgement.transmit_finish_ns,
+                                                                    cycle_ns_))
+                       << ','
+                       << (localized ? 0 : CeilNanosecondsToCycles(state.acknowledgement.arrival_ns, cycle_ns_));
             }
             output << '\n';
         }
@@ -377,13 +438,20 @@ class PhaseTwoSimulator {
         uint64_t source_delay_cycles = 0;
         uint64_t destination_delay_cycles = 0;
         uint64_t destination_block_cycles = 0;
+        uint64_t localized_cross_worker_records = 0;
         for (const TraceState& state : states_) {
             payload_bytes += state.bench.flits * flit_bytes_;
             special_records += state.special;
+            if (!state.special) {
+                ++normal_records;
+            }
+            if (IsLocalizedCrossWorker(state)) {
+                ++localized_cross_worker_records;
+                continue;
+            }
             if (state.special) {
                 continue;
             }
-            ++normal_records;
             const int64_t start_ns = static_cast<int64_t>(state.bench.source_cycle * cycle_ns_);
             source_delay_cycles += CeilNanosecondsToCycles(state.forward.transmit_finish_ns - start_ns, cycle_ns_);
             destination_delay_cycles += CeilNanosecondsToCycles(state.forward.arrival_ns - start_ns, cycle_ns_);
@@ -408,6 +476,10 @@ class PhaseTwoSimulator {
                << "  \"flit_bytes\": " << flit_bytes_ << ",\n"
                << "  \"link_rate\": \"" << link_rate_ << "\",\n"
                << "  \"link_delay_ns\": " << link_delay_ns_ << ",\n"
+               << "  \"counterfactual_localize_cross_worker_network\": "
+               << (localize_cross_worker_network_ ? "true" : "false") << ",\n"
+               << "  \"counterfactual_localized_cross_worker_records\": "
+               << localized_cross_worker_records << ",\n"
                << "  \"sum_source_sync_delay_cycles\": " << source_delay_cycles << ",\n"
                << "  \"sum_destination_network_delay_cycles\": " << destination_delay_cycles << ",\n"
                << "  \"sum_destination_sync_block_cycles\": " << destination_block_cycles << "\n"
@@ -415,6 +487,18 @@ class PhaseTwoSimulator {
     }
 
   private:
+    bool IsLocalizedCrossWorker(const TraceState& state) const {
+        if (!localize_cross_worker_network_) {
+            return false;
+        }
+        const auto source = worker_slots_.find(state.bench.source);
+        const auto destination = worker_slots_.find(state.bench.destination);
+        if (source == worker_slots_.end() || destination == worker_slots_.end()) {
+            throw std::runtime_error("worker routing has no slot for a benchmark communication endpoint");
+        }
+        return source->second != destination->second;
+    }
+
     uint16_t PortFor(uint32_t node) const { return static_cast<uint16_t>(20000 + node); }
 
     uint32_t FragmentCount(uint64_t bytes) const {
@@ -517,6 +601,8 @@ class PhaseTwoSimulator {
     uint64_t max_datagram_bytes_;
     std::string link_rate_;
     uint64_t link_delay_ns_;
+    std::map<uint32_t, uint32_t> worker_slots_;
+    bool localize_cross_worker_network_ = false;
     NodeContainer nodes_;
     std::vector<Ipv4Address> node_addresses_;
     std::vector<Ptr<Socket>> receivers_;
@@ -533,6 +619,8 @@ void PrintUsage(const char* program) {
               << "  --link-delay-ns N        propagation delay per topology link (default: 1)\n"
               << "  --max-datagram-bytes N   UDP segment payload for a bench transaction (default: 1400)\n"
               << "  --queue-packets N        maximum packets queued per topology link (default: 100000)\n"
+              << "  --worker-routing PATH    generated routing.json used by counterfactual mode\n"
+              << "  --localize-cross-worker-network  make cross-worker ns-3 timing local and zero-cycle\n"
               << "  --metrics-csv PATH       per-transaction timing records\n"
               << "  --summary-json PATH      aggregate timing summary\n";
 }
@@ -546,6 +634,7 @@ int main(int argc, char* argv[]) {
         std::string topology_path;
         std::string metrics_csv_path;
         std::string summary_json_path;
+        std::string worker_routing_path;
         std::string link_rate = "128Gbps";
         uint32_t nodes = 0;
         uint64_t cycle_ns = 1;
@@ -553,6 +642,7 @@ int main(int argc, char* argv[]) {
         uint64_t link_delay_ns = 1;
         uint64_t max_datagram_bytes = 1400;
         uint64_t queue_packets = 100000;
+        bool localize_cross_worker_network = false;
 
         for (int index = 1; index < argc; ++index) {
             const std::string argument = argv[index];
@@ -582,6 +672,10 @@ int main(int argc, char* argv[]) {
                 max_datagram_bytes = ParsePositive(require_value(argument), argument);
             } else if (argument == "--queue-packets") {
                 queue_packets = ParsePositive(require_value(argument), argument);
+            } else if (argument == "--worker-routing") {
+                worker_routing_path = require_value(argument);
+            } else if (argument == "--localize-cross-worker-network") {
+                localize_cross_worker_network = true;
             } else if (argument == "--metrics-csv") {
                 metrics_csv_path = require_value(argument);
             } else if (argument == "--summary-json") {
@@ -600,11 +694,18 @@ int main(int argc, char* argv[]) {
         if (max_datagram_bytes > 65000) {
             throw std::runtime_error("--max-datagram-bytes must fit in an IPv4 UDP datagram");
         }
+        if (localize_cross_worker_network && worker_routing_path.empty()) {
+            throw std::runtime_error("--localize-cross-worker-network requires --worker-routing");
+        }
 
         const std::vector<BenchRecord> bench = ReadBench(bench_path);
         const std::vector<std::pair<uint32_t, uint32_t>> edges = ReadTopology(topology_path);
+        const std::map<uint32_t, uint32_t> worker_slots = localize_cross_worker_network
+                                                              ? ReadWorkerRouting(worker_routing_path, nodes)
+                                                              : std::map<uint32_t, uint32_t>{};
         PhaseTwoSimulator simulator(bench, edges, nodes, cycle_ns, flit_bytes, max_datagram_bytes, link_rate,
-                                   link_delay_ns, queue_packets);
+                                   link_delay_ns, queue_packets, worker_slots,
+                                   localize_cross_worker_network);
         simulator.Run();
         simulator.WriteDelayInfo(delay_info_path);
         if (!metrics_csv_path.empty()) {

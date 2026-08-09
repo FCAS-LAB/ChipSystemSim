@@ -32,6 +32,12 @@ def main() -> None:
                         help="ns-3 propagation delay per topology edge when --phase2-backend=ns3")
     parser.add_argument("--ns3-queue-packets", type=int, default=100000,
                         help="ns-3 per-link DropTail queue bound when --phase2-backend=ns3")
+    parser.add_argument(
+        "--ns3-localize-cross-worker-network", action="store_true",
+        help=("for a counterfactual timing baseline, retain functional PipeComm but "
+              "set ns-3 delayInfo to zero only for traffic whose source and destination "
+              "chiplets are placed on different LEGOSim workers"),
+    )
     parser.add_argument("--gdb-process-index", type=int,
                         help="run exactly one phase-one process under batch gdb and print all thread backtraces")
     parser.add_argument("--sniper-cores", type=int,
@@ -169,6 +175,14 @@ def main() -> None:
                 "--metrics-csv", "../ns3_phase2_metrics.csv",
                 "--summary-json", "../ns3_phase2_summary.json",
             ]
+            if arguments.ns3_localize_cross_worker_network:
+                # The coordinator receives this read-only Swarm config.  ns-3
+                # uses its coordinate-to-worker map solely to select the
+                # counterfactual timing path; PipeComm remains unchanged.
+                process["args"].extend([
+                    "--worker-routing", "/run/config/routing.json",
+                    "--localize-cross-worker-network",
+                ])
             process["log"] = "ns3_phase2.log"
             process["is_to_stdout"] = True
 

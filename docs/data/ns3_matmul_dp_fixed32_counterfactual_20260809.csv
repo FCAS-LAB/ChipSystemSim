@@ -1,0 +1,5 @@
+nodes,workload,gpu_ranks,cpu_controller_ranks,gpu_ranks_per_worker,logical_worker_resources,mesh_topology,ns3_cycle_ns,flit_bytes,link_rate,link_delay_ns,max_udp_payload_bytes,queue_type,queue_packets,dind_netem_one_way_delay,dind_rate_limit,cross_worker_records_per_phase2_round,phase2_rounds,counterfactual
+1,matmul_dp_block_gemm,32,1,32,8vCPU;16GiB,6x6_mesh_36_nodes,1,32,128Gbps,1,1400,DropTailQueue,100000,1ms,none,0,2,zero_ns3_delay_only_for_cross_worker_traffic
+2,matmul_dp_block_gemm,32,1,16,8vCPU;16GiB,6x6_mesh_36_nodes,1,32,128Gbps,1,1400,DropTailQueue,100000,1ms,none,80,2,zero_ns3_delay_only_for_cross_worker_traffic
+4,matmul_dp_block_gemm,32,1,8,8vCPU;16GiB,6x6_mesh_36_nodes,1,32,128Gbps,1,1400,DropTailQueue,100000,1ms,none,120,2,zero_ns3_delay_only_for_cross_worker_traffic
+8,matmul_dp_block_gemm,32,1,4,8vCPU;16GiB,6x6_mesh_36_nodes,1,32,128Gbps,1,1400,DropTailQueue,100000,1ms,none,140,2,zero_ns3_delay_only_for_cross_worker_traffic

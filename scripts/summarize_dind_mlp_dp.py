@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict
+
+
+FINAL_CYCLE_PATTERN = re.compile(
+    r"\*\*\*\* End of Simulation \*\*\*\*(?s:.*?)Benchmark elapses ([0-9]+) cycle"
+)
 
 
 def parse_timestamp(value: str) -> float:
@@ -27,6 +33,14 @@ def read_key_values(path: Path) -> Dict[str, str]:
     return values
 
 
+def completion_cycles(coordinator_log: str, run_directory: Path) -> int:
+    """Return the final converged LEGOSim cycle count after natural completion."""
+    matches = FINAL_CYCLE_PATTERN.findall(coordinator_log)
+    if not matches:
+        raise RuntimeError(f"{run_directory}: final benchmark cycle count is missing")
+    return int(matches[-1])
+
+
 def collect_run(run_directory: Path, nodes: int) -> Dict[str, object]:
     """Validate one run and return reportable wall-clock metrics."""
     timing = read_key_values(run_directory / "coordinator_timing.txt")
@@ -38,25 +52,70 @@ def collect_run(run_directory: Path, nodes: int) -> Dict[str, object]:
         raise RuntimeError(f"{run_directory}: coordinator exit is not zero")
     if "End of Simulation" not in coordinator_log:
         raise RuntimeError(f"{run_directory}: natural-completion marker is missing")
+    final_cycles = completion_cycles(coordinator_log, run_directory)
 
     total_seconds = parse_timestamp(timing["finish"]) - parse_timestamp(timing["start"])
     if total_seconds <= 0:
         raise RuntimeError(f"{run_directory}: non-positive coordinator duration")
-    logical_sync_seconds = int(metrics.get("cross_legosim_sync_wall_union_ns", "0")) / 1_000_000_000
-    physical_sync_seconds = int(metrics.get("cross_physical_host_sync_wall_union_ns", "0")) / 1_000_000_000
+    # The legacy READ-block union is a dependency-wait diagnostic: it may
+    # include producer computation before a matching WRITE begins. Keep it
+    # only under its explicit name for backwards-compatible comparisons.
+    logical_dependency_wait_seconds = (
+        int(metrics.get("cross_legosim_sync_wall_union_ns", "0")) / 1_000_000_000
+    )
+    physical_dependency_wait_seconds = (
+        int(metrics.get("cross_physical_host_sync_wall_union_ns", "0")) / 1_000_000_000
+    )
+    # These paired FIFO intervals start only once producer submission and the
+    # consumer READ are both ready, excluding both sides' pre-operation work.
+    logical_transport_sync_seconds = (
+        int(metrics.get("cross_legosim_transport_exposed_sync_wall_union_ns", "0"))
+        / 1_000_000_000
+    )
+    physical_transport_sync_seconds = (
+        int(metrics.get("cross_physical_host_transport_exposed_sync_wall_union_ns", "0"))
+        / 1_000_000_000
+    )
     return {
         "nodes": nodes,
+        "benchmark_completion_cycles": final_cycles,
         "total_simulation_seconds": total_seconds,
         # Different logical workers in a one-host DinD experiment are
         # cross-LEGOSim, not cross-physical-machine. Keep both measurements
         # explicit so a chart cannot silently promote a container boundary to
         # a physical network boundary.
-        "cross_legosim_sync_wall_seconds": logical_sync_seconds,
-        "cross_legosim_sync_overhead_percent": 100.0 * logical_sync_seconds / total_seconds,
+        "cross_legosim_dependency_wait_seconds": logical_dependency_wait_seconds,
+        "cross_legosim_dependency_wait_percent": 100.0 * logical_dependency_wait_seconds / total_seconds,
+        "cross_legosim_transport_sync_seconds": logical_transport_sync_seconds,
+        "cross_legosim_transport_sync_overhead_percent": (
+            100.0 * logical_transport_sync_seconds / total_seconds
+        ),
+        "cross_legosim_transport_pairs": int(metrics.get("cross_legosim_transport_pairs", "0")),
+        "cross_legosim_transport_unmatched_writes": int(
+            metrics.get("cross_legosim_transport_unmatched_writes", "0")
+        ),
+        "cross_legosim_transport_unmatched_reads": int(
+            metrics.get("cross_legosim_transport_unmatched_reads", "0")
+        ),
         "cross_legosim_bytes": int(metrics.get("cross_legosim_bytes", "0")),
         "cross_legosim_records": int(metrics.get("cross_legosim_records", "0")),
-        "cross_physical_host_sync_wall_seconds": physical_sync_seconds,
-        "cross_physical_host_sync_overhead_percent": 100.0 * physical_sync_seconds / total_seconds,
+        "cross_physical_host_dependency_wait_seconds": physical_dependency_wait_seconds,
+        "cross_physical_host_dependency_wait_percent": (
+            100.0 * physical_dependency_wait_seconds / total_seconds
+        ),
+        "cross_physical_host_transport_sync_seconds": physical_transport_sync_seconds,
+        "cross_physical_host_transport_sync_overhead_percent": (
+            100.0 * physical_transport_sync_seconds / total_seconds
+        ),
+        "cross_physical_host_transport_pairs": int(
+            metrics.get("cross_physical_host_transport_pairs", "0")
+        ),
+        "cross_physical_host_transport_unmatched_writes": int(
+            metrics.get("cross_physical_host_transport_unmatched_writes", "0")
+        ),
+        "cross_physical_host_transport_unmatched_reads": int(
+            metrics.get("cross_physical_host_transport_unmatched_reads", "0")
+        ),
         "cross_physical_host_bytes": int(metrics.get("cross_physical_host_bytes", "0")),
         "cross_physical_host_records": int(metrics.get("cross_physical_host_records", "0")),
         "ns3_normal_records": int(metrics.get("ns3_normal_records", "0")),

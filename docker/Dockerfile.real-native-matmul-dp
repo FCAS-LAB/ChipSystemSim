@@ -1,0 +1,15 @@
+# Native block-GEMM overlay. The base image already contains LEGOSim, the
+# SimBricks BaseIf PipeComm gateway and the coordinator-local ns-3 adapter.
+ARG BASE_IMAGE=chipsystemsim:native-mlp-ns3-v4
+FROM ${BASE_IMAGE}
+
+COPY real/matmul_dp_cpu.cpp real/matmul_dp_gpu.cu real/matmul_dp_makefile /tmp/matmul-dp/
+
+RUN /bin/bash -lc 'set -euo pipefail; \
+      export SIMULATOR_ROOT=/opt/legosim CUDA_INSTALL_PATH=${CUDA_INSTALL_PATH:-/usr}; \
+      set +u; source /opt/legosim/gpgpu-sim/setup_environment; set -u; \
+      install -d /opt/legosim/artifact/matmul_dp; \
+      install -m 0644 /tmp/matmul-dp/matmul_dp_cpu.cpp /opt/legosim/artifact/matmul_dp/; \
+      install -m 0644 /tmp/matmul-dp/matmul_dp_gpu.cu /opt/legosim/artifact/matmul_dp/; \
+      install -m 0644 /tmp/matmul-dp/matmul_dp_makefile /opt/legosim/artifact/matmul_dp/Makefile; \
+      make -C /opt/legosim/artifact/matmul_dp -j2'

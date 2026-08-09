@@ -16,6 +16,13 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 
 COUNTERS = ("records", "bytes", "elapsed_ns", "sync_wait_ns", "writes", "reads")
+TRANSPORT_COUNTERS = (
+    "transport_pairs",
+    "transport_unmatched_writes",
+    "transport_unmatched_reads",
+    "transport_exposed_sync_wall_sum_ns",
+    "transport_exposed_sync_wall_union_ns",
+)
 
 
 def empty_counter() -> Dict[str, int]:
@@ -59,6 +66,99 @@ def classify_scope(record: Dict[str, object]) -> str:
     return "cross_legosim_same_physical_host"
 
 
+def selected_groups(scope: str) -> List[str]:
+    """Return every aggregation scope to which a transport record belongs."""
+    groups = ["all"]
+    if scope == "same_logical_worker":
+        groups.append("same_logical_worker")
+    else:
+        groups.append("cross_legosim")
+        if scope == "cross_physical_host":
+            groups.append("cross_physical_host")
+    return groups
+
+
+def transfer_key(record: Dict[str, object]) -> Optional[Tuple[int, int, str, int]]:
+    """Identify one FIFO item by its producer and consumer worker slots.
+
+    Legacy logs have no pipe name and are deliberately excluded: guessing a
+    correspondence from byte count alone could turn compute waiting into a
+    seemingly precise communication metric.
+    """
+    pipe_name = record.get("pipe_name")
+    if not isinstance(pipe_name, str) or not pipe_name:
+        return None
+    try:
+        source_slot = int(record["source_slot"])
+        peer_slot = int(record["peer_slot"])
+        byte_count = int(record["bytes"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if record.get("operation") == "W":
+        return source_slot, peer_slot, pipe_name, byte_count
+    if record.get("operation") == "R":
+        return peer_slot, source_slot, pipe_name, byte_count
+    return None
+
+
+def collect_exposed_transport_metrics(records: Iterable[Dict[str, object]]) -> Dict[str, int]:
+    """Measure transfer-only READ blocking, excluding both endpoints' compute.
+
+    A consumer READ may start before the producer has computed and submitted
+    its message. Its raw elapsed time therefore includes producer compute. For
+    a matched FIFO item, only the interval from ``max(write_started,
+    read_started)`` to ``read_finished`` is counted. It begins once both the
+    payload submission and the consumer are ready, so it contains transport
+    and protocol progress but neither endpoint's pre-operation computation.
+    """
+    groups = ("all", "same_logical_worker", "cross_legosim", "cross_physical_host")
+    values = {f"{group}_{counter}": 0 for group in groups for counter in TRANSPORT_COUNTERS}
+    writes: Dict[Tuple[int, int, str, int], List[Dict[str, object]]] = {}
+    reads: Dict[Tuple[int, int, str, int], List[Dict[str, object]]] = {}
+    for record in records:
+        key = transfer_key(record)
+        if key is None:
+            continue
+        if record.get("operation") == "W":
+            writes.setdefault(key, []).append(record)
+        elif record.get("operation") == "R":
+            reads.setdefault(key, []).append(record)
+
+    intervals: Dict[str, List[Tuple[int, int]]] = {group: [] for group in groups}
+    for key in sorted(set(writes) | set(reads)):
+        write_items = sorted(writes.get(key, []), key=lambda item: int(item.get("started_unix_ns", -1)))
+        read_items = sorted(reads.get(key, []), key=lambda item: int(item.get("finished_unix_ns", -1)))
+        matched_writes = 0
+        matched_reads = 0
+        for write, read in zip(write_items, read_items):
+            try:
+                write_started = int(write["started_unix_ns"])
+                read_started = int(read["started_unix_ns"])
+                read_finished = int(read["finished_unix_ns"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            interval_started = max(write_started, read_started)
+            if read_finished < interval_started:
+                continue
+            scope = classify_scope(write)
+            for group in selected_groups(scope):
+                values[f"{group}_transport_pairs"] += 1
+                values[f"{group}_transport_exposed_sync_wall_sum_ns"] += read_finished - interval_started
+                intervals[group].append((interval_started, read_finished))
+            matched_writes += 1
+            matched_reads += 1
+
+        scope_source = write_items[0] if write_items else (read_items[0] if read_items else None)
+        if scope_source is not None:
+            for group in selected_groups(classify_scope(scope_source)):
+                values[f"{group}_transport_unmatched_writes"] += len(write_items) - matched_writes
+                values[f"{group}_transport_unmatched_reads"] += len(read_items) - matched_reads
+
+    for group, group_intervals in intervals.items():
+        values[f"{group}_transport_exposed_sync_wall_union_ns"] = interval_union(group_intervals)
+    return values
+
+
 def collect_pipe_metrics(path: Path) -> Dict[str, int]:
     groups = {
         "all": empty_counter(),
@@ -67,21 +167,22 @@ def collect_pipe_metrics(path: Path) -> Dict[str, int]:
         "cross_physical_host": empty_counter(),
     }
     intervals: Dict[str, List[Tuple[int, int]]] = {group: [] for group in groups}
+    records: List[Dict[str, object]] = []
+    defaults = {
+        f"{group}_{name}": value
+        for group, counter in groups.items()
+        for name, value in counter.items()
+    }
+    defaults.update(collect_exposed_transport_metrics(()))
     if not path.is_file():
-        return {f"{group}_{name}": value for group, values in groups.items() for name, value in values.items()}
+        return defaults
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         if not line.startswith("pipe-metric:"):
             continue
         record = json.loads(line.split(":", 1)[1])
+        records.append(record)
         scope = classify_scope(record)
-        selected = ["all"]
-        if scope == "same_logical_worker":
-            selected.append("same_logical_worker")
-        else:
-            selected.append("cross_legosim")
-            if scope == "cross_physical_host":
-                selected.append("cross_physical_host")
-        for group in selected:
+        for group in selected_groups(scope):
             add_record(groups[group], record)
             if record.get("operation") != "R":
                 continue
@@ -97,6 +198,7 @@ def collect_pipe_metrics(path: Path) -> Dict[str, int]:
     for group, group_intervals in intervals.items():
         values[f"{group}_sync_wall_union_ns"] = interval_union(group_intervals)
         values[f"{group}_sync_wall_interval_count"] = len(group_intervals)
+    values.update(collect_exposed_transport_metrics(records))
     return values
 
 

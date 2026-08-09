@@ -74,6 +74,39 @@ class TransportScopeMetricsTest(unittest.TestCase):
         self.assertEqual(values["cross_legosim_sync_wall_union_ns"], 25)
         self.assertEqual(values["cross_physical_host_sync_wall_union_ns"], 10)
 
+    def test_transfer_pairing_excludes_producer_compute_before_write(self) -> None:
+        """Raw READ time must not be reported as pure synchronization time."""
+        records = (
+            # The consumer reads at t=10, but producer compute finishes and
+            # enters WRITE only at t=90. The READ ends at t=100. The pure
+            # transfer-facing wait is 10 ns, not the raw 90 ns READ wait.
+            {
+                "operation": "W", "pipe_name": "buffer0_0_1_0", "bytes": 64,
+                "source_slot": 0, "peer_slot": 1,
+                "transport_scope": "cross_physical_host",
+                "started_unix_ns": 90, "finished_unix_ns": 95,
+            },
+            {
+                "operation": "R", "pipe_name": "buffer0_0_1_0", "bytes": 64,
+                "source_slot": 1, "peer_slot": 0,
+                "transport_scope": "cross_physical_host",
+                "started_unix_ns": 10, "finished_unix_ns": 100,
+            },
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "transport.log"
+            path.write_text(
+                "".join("pipe-metric: " + json.dumps(record) + "\n" for record in records),
+                encoding="utf-8",
+            )
+            values = collect_pipe_metrics(path)
+
+        self.assertEqual(values["cross_physical_host_transport_pairs"], 1)
+        self.assertEqual(values["cross_physical_host_transport_exposed_sync_wall_sum_ns"], 10)
+        self.assertEqual(values["cross_physical_host_transport_exposed_sync_wall_union_ns"], 10)
+        self.assertEqual(values["cross_physical_host_transport_unmatched_writes"], 0)
+        self.assertEqual(values["cross_physical_host_transport_unmatched_reads"], 0)
+
 
 class TimingFeedbackValidationTest(unittest.TestCase):
     """Require a complete ns-3 artifact before accepting timing feedback."""

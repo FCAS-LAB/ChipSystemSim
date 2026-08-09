@@ -22,6 +22,11 @@ LEGOSim 的 Sniper、GPGPU-Sim、MNSIM 与 DSA 仍按原进程图运行。
 GPGPU-Sim/PipeComm 端点，网络模拟 cycle 来自 LEGOSim 的原生时序接口，而非 PipeComm 的
 墙钟阻塞。历史 `MLP-DP` 工作负载仅用于旧的功能性实验，不是本 README 的主复现路径。
 
+除原始 MLP 外，仓库还提供了固定 32 GPU rank 的 **Matmul-DP/block-GEMM** 时序微基准。它用于
+通过受控反事实测量“跨 LEGOSim 通信使应用关键路径额外增加了多少模拟 cycle”，而不是用
+PipeComm 的 host wall-clock `READ` 等待替代该结论。已导出的 1/2/4/8 节点数据、ns-3 参数和
+复现步骤见 [Matmul-DP 反事实结果记录](docs/RESULTS_MATMUL_DP_COUNTERFACTUAL_20260809.md)。
+
 ## 推荐复现：原始 MLP + ns-3 时序闭环
 
 采用单机 DinD + Docker Swarm 可以复现 1、2、4、8 个**逻辑** LEGOSim worker 的部署。每一
@@ -104,6 +109,12 @@ scripts/run_dind_mlp_dp.sh \
 
 单节点不存在跨 rank 启动/完成屏障，稳态边界使用“首个工作 header 到最后一个 payload”近似，
 结果 JSON 中会明确标记该规则。
+
+对于 ns-3 cycle 域的跨 LEGOSim 同步开销，不应把上述 wall-clock 指标相除，而应运行配对的
+本地化时序基线：保持 workload、放置与 PipeComm 功能路径不变，仅令跨 worker 的 ns-3
+`delayInfo` 为零，并以 `Benchmark elapses` 的收敛 cycle 计算
+`(T_actual - T_local_baseline) / T_actual`。实现和注意事项见
+[ns-3 时序闭环](docs/NS3_TIMING_CLOSED_LOOP.md#跨-worker-反事实基线)。
 
 ## 目录
 

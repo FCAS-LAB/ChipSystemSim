@@ -112,6 +112,11 @@ class Router:
             # whether its producer is local or remote.
             print("pipe-metric: " + json.dumps({
                 "operation": operation,
+                # The pipe identifies a FIFO direction. Together with the
+                # source/peer slots and byte count it lets the offline
+                # collector pair one producer WRITE with its consumer READ.
+                # This removes producer-side compute from apparent READ wait.
+                "pipe_name": pipe_name,
                 "bytes": byte_count,
                 "source_slot": self.slot,
                 "peer_slot": peer,
